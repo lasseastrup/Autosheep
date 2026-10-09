@@ -1,0 +1,7 @@
+<!doctype html><html><head><style>body{background:#3e3546;margin:0}canvas{image-rendering:pixelated;width:1440px;height:810px}</style></head>
+<body><canvas id=c width=480 height=270></canvas>
+<script type="module">
+import { drawSprite, SPRITE_NAMES } from '/src/engine/sprites.ts';
+const g = document.getElementById('c').getContext('2d');
+SPRITE_NAMES.forEach((n, i) => drawSprite(g, n, 8 + (i % 8) * 58, 8 + Math.floor(i / 8) * 58, 4));
+</script></body></html>

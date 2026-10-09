@@ -1,0 +1,34 @@
+{
+  "name": "autosheep",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Autosheep: an isometric pixel-art sheep-herding automation game. General Gafoop must herd the sheep of Earth from the Stone Age to the Industrial Age.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:single": "tsc --noEmit && vite build --mode single",
+    "artifact": "npm run build:single && node tools/make-artifact.mjs",
+    "typecheck": "tsc --noEmit",
+    "frames": "node tools/frames.mjs",
+    "movie": "node tools/render-movie.mjs",
+    "voice": "python3 tools/voice/generate.py"
+  },
+  "dependencies": {
+    "@fontsource/jersey-10": "^5.3.0",
+    "@fontsource/micro-5": "^5.3.0",
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "@fontsource/press-start-2p": "^5.3.0",
+    "@fontsource/silkscreen": "^5.3.0",
+    "@fontsource/tiny5": "^5.3.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/three": "^0.186.0",
+    "playwright-core": "^1.56.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.7",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}

@@ -1,0 +1,22 @@
+<!doctype html><html><head><style>body{background:#222;margin:0}canvas{image-rendering:pixelated;width:1440px;height:810px}</style></head>
+<body><canvas id=c width=480 height=270></canvas>
+<script type="module">
+import '@fontsource/pixelify-sans/400.css';
+import '@fontsource/silkscreen/400.css';
+import '@fontsource/press-start-2p/400.css';
+import '@fontsource/tiny5/400.css';
+import '@fontsource/jersey-10/400.css';
+import '@fontsource/micro-5/400.css';
+const fonts = [['Pixelify Sans',[8,10,12,16]],['Silkscreen',[8,16]],['Press Start 2P',[8]],['Tiny5',[8,16]],['Jersey 10',[10,20,40]],['Micro 5',[10,20]]];
+await Promise.all(fonts.flatMap(([f,s])=>s.map(z=>document.fonts.load(`${z}px "${f}"`))));
+const c = document.getElementById('c'); const g = c.getContext('2d');
+g.fillStyle='#1a1c2c'; g.fillRect(0,0,480,270);
+let y = 4;
+for (const [f, sizes] of fonts) for (const s of sizes) {
+  const off = document.createElement('canvas'); off.width=480; off.height=s*2; const o=off.getContext('2d');
+  o.font = `${s}px "${f}"`; o.textBaseline='top'; o.fillStyle='#fff';
+  o.fillText(`${f} ${s}: Sheep are sheep. GAFOOP! 0123`, 2, 1);
+  const d = o.getImageData(0,0,480,s*2); for (let i=3;i<d.data.length;i+=4) d.data[i] = d.data[i]>110?255:0; o.putImageData(d,0,0);
+  g.drawImage(off, 0, y); y += Math.ceil(s*1.25)+2;
+}
+</script></body></html>

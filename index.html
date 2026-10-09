@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Autosheep</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #18141a; overflow: hidden; }
+      #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+      canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+      #hint { position: fixed; right: 12px; bottom: 8px; font: 12px/1.4 monospace; color: #625565; user-select: none; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><canvas id="screen"></canvas></div>
+    <div id="hint"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
