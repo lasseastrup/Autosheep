@@ -362,6 +362,24 @@ upgrades the wool chain: fleece → yarn → felt → cloth → garments → (fu
 | Industrial | Robodog works | Steel + gears + boilers | Robodogs | Programmable drivers |
 | Industrial | Patent office | Garments + steel + paper | **Patents** | Peak bureaucracy, Auditor approved |
 
+A Stone Age base, drawn as a factory. Every arrow is a herdway, and everything that moves along
+it is a sheep (carrying a pack, or carrying its own wool):
+
+```mermaid
+flowchart LR
+  P[Pasture] -->|graze| W((woolly sheep))
+  W -->|race| S[Shearing shed]
+  S -->|shorn sheep| P
+  S -->|fleece packs| SP[Spindle hut]
+  SP -->|yarn packs| AP[Audit pad]
+  Q[Quarry] -->|stone packs| M[Mason's yard]
+  M -->|block packs| E[Ewehenge]
+  T[Treadmill] -. power .-> SP
+  R[Rest pen] <-->|tired / rested sheep| T
+  C((calm sheep)) --> TS[Thinking stones]
+  TS -->|Notions| RT[Research terminal]
+```
+
 ### 6.3 Power
 
 1. **Treadmills** (Stone–Bronze): sheep walk in place. Output depends on calm and fatigue, so
