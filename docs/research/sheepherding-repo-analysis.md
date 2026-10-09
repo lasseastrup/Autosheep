@@ -1,5 +1,9 @@
 # Sheepherding repo analysis: what Autosheep can take from it
 
+> **Snapshot.** This describes `lasseastrup/sheepherding` at commit `a470408` (2026-09-12). The flock
+> model is a work in progress and is expected to change a lot; Autosheep depends on it only through
+> the flock contract in `docs/DESIGN.md` §4.1.
+
 Source analysed: `lasseastrup/sheepherding` at commit `a470408` ("Make the flock shed..."), read 2026-10-09.
 All `file:line` citations are relative to that repo. Units in the sim are **body lengths (BL ≈ 1.2 m)
 and seconds**. The original game is a desktop overlay where the mouse pointer is the dog; flocks of

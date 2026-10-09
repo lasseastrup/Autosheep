@@ -20,7 +20,7 @@
 Related documents:
 
 - [`research/pixel-art-rendering.md`](research/pixel-art-rendering.md): the 3D→pixel-art pipeline research.
-- [`research/sheepherding-repo-analysis.md`](research/sheepherding-repo-analysis.md): what we reuse from the `sheepherding` flock sim, and a proposed architecture for map-scale flocks.
+- [`research/sheepherding-repo-analysis.md`](research/sheepherding-repo-analysis.md): a snapshot analysis of the `sheepherding` flock sim and a proposed architecture for map-scale flocks. The flock model is a work in progress; the game depends on it only through the contract in §4.1.
 - Intro cutscene source: `src/intro/` (script in `src/intro/lines.json`, edit decision list in `src/intro/timeline.ts`).
 
 ---
@@ -174,20 +174,51 @@ add Electric, Atomic and Space eras; the burrito awaits.
 
 ### 4.1 Simulation model
 
-We port the behaviour model of the `sheepherding` repo (see the analysis doc, §2). In brief:
+**The flock model is a work in progress and will change a lot during development.** The game is
+therefore built against a stable **flock contract** (below), not against any particular model.
+The model can be retuned, rewritten or swapped while devices, stations, overlays and saves keep
+working.
 
-- **States**: graze, alert, walk, run, rest, with research-fitted transition rates and
-  per-sheep reaction delays, so changes ripple through a flock.
-- **Perception**: flight zone, closing speed, head-on approach, a rear blind cone, and lossy
-  fear contagion that needs a quorum of alarmed neighbours. Sheep habituate to static threats
-  but not to novel sounds.
-- **Steering**: context steering (16 "want / avoid" slots), selfish-herd flight toward the flock
-  centre, point of balance at the shoulder, follow-the-leader lines, and position-based collision
-  that lets packed flocks rest without jitter.
+**Starting point.** The `sheepherding` repo's model is the reference implementation to begin
+with (the analysis doc §2 describes it as of commit `a470408`). It has behaviour states, a
+perception and fear model, context steering and position-based collision. Expect all of that to
+move; nothing else in the game may reach into it.
 
-What changes for Autosheep (analysis doc §3.2–3.3): many simultaneous stimuli instead of one
-pointer, static obstacles via per-chunk distance fields, per-herd and per-region groups instead of
-flock-wide ones, goal flow fields, chunk sleeping, multi-threading and save-safe determinism.
+**The contract** has three parts:
+
+- **Inputs.** The game describes the world to the sim and never sets sheep positions or states
+  directly. It supplies stimuli from devices and Gafoop (threat, lure, flow, startle, leader;
+  each with a position or field, strength, falloff and tag filter). It also supplies obstacles
+  (fences and walls as distance fields, with a see-through flag), goals (flow fields) and
+  terrain.
+- **Outputs.** Per sheep, every tick: position, heading, speed, a coarse state (`graze`,
+  `alert`, `walk`, `run`, `rest`), fear 0–1, and group id. Game-owned fields (pack, tag, wool,
+  hunger, fatigue, stress) live outside the sim, which may read some of them (hunger biases
+  grazing; fatigue caps speed).
+- **Behaviour guarantees.** These are the properties the design depends on. Each one is an
+  automated scenario test with a tolerance, and the tests are what a new model must pass. The
+  model's own parameters are free to change.
+
+| Guarantee | Scenario test (targets, tuned over time) |
+|---|---|
+| Sheep move away from threats and toward lures | A flock under a threat field ends farther away; with a lure, closer |
+| A driven flock can be penned | Gafoop's crook pens 30 sheep through a 2 m gate within a time limit |
+| Single-file races flow | A curved race with a driver at the entry sustains ≥ N sheep/min |
+| Over-driving jams | Doubling driver pressure in a race lowers throughput (breakback appears) |
+| Panic spreads by line of sight | A startle reaches a flock behind hurdles, but not one behind a stone wall |
+| Static threats habituate | A scarecrow's effect falls off over time; a gong's does not |
+| Small cuts rejoin | A splitter cutting below the minimum batch sees most of the cut flow back |
+| Hungry sheep leak | A race through lush grass loses more sheep than one through bare ground |
+| Rest is stable | A packed flock at rest shows no jitter (bounded per-tick movement) |
+| Determinism | Same seed and inputs give the same state hash, with one thread or several |
+
+Mechanics in §5 are written against these guarantees. The numbers in §5 (throughputs, 40 s
+habituation and so on) are **design targets the model gets tuned toward**, not facts about the
+current code.
+
+Scaling work needed whatever the model becomes (analysis doc §3.2–3.3): many simultaneous
+stimuli, static obstacles, per-herd and per-region groups, goal flow fields, chunk sleeping,
+multi-threading and save-safe determinism.
 
 ### 4.2 Per-sheep data
 
@@ -586,12 +617,18 @@ The intro is the style guide made real. Rules:
 main thread                                  sim workers (N)
 ┌───────────────────────────────┐           ┌──────────────────────────────┐
 │ input · UI · build tools      │  commands │ fixed 30 Hz tick             │
-│ renderer (three.js + pixel    │ ────────► │ • stimuli from devices       │
-│   pipeline, instanced sheep)  │           │ • sheep perception/steering  │
-│ audio engine                  │ ◄──────── │ • collisions (PBD)           │
+│ renderer (three.js + pixel    │ ────────► │ • devices → stimuli          │
+│   pipeline, instanced sheep)  │           │ • FLOCK MODEL (swappable,    │
+│ audio engine                  │ ◄──────── │   behind the flock contract) │
 │ interpolation of snapshots    │ snapshots │ • stations, packs, power     │
 └───────────────────────────────┘ (SAB)     └──────────────────────────────┘
 ```
+
+- **Flock model behind an interface**: a `FlockModel` takes the contract inputs from §4.1 and
+  writes the contract outputs into shared arrays each tick. Stations, packs, power and the UI
+  read only those outputs. Models are versioned modules
+  (`src/sim/models/sheepherding-v1/`, ...). A simple boids model is kept as a second
+  implementation, which proves the boundary holds and is handy for debugging.
 
 - **Sim**: TypeScript, SoA typed arrays, no DOM. Fixed tick (30 Hz) with render interpolation.
   Deterministic via a counter-based RNG keyed by (sheep, tick, purpose), so save/load and
@@ -612,8 +649,10 @@ main thread                                  sim workers (N)
   pack colour), chunked terrain meshes, the shared pixel post pipeline. WebGL2 now, WebGPU later.
 - **Data-driven content**: items, recipes, devices, tech and Audits in typed TS/JSON tables, so
   balancing doesn't touch code.
-- **Saves**: a snapshot of the SoA arrays, device states and RNG counters (compressed),
-  versioned.
+- **Saves**: contract-level sheep state (positions, velocities, coarse states, fear) plus
+  game-owned fields, device states and RNG counters, compressed and versioned. A model's
+  private state is stored as an optional blob. When the model has changed, it is rebuilt from
+  the contract state, so old saves survive model rewrites.
 
 ### 13.2 Performance budgets (mid-range laptop, 60 fps)
 
@@ -626,8 +665,12 @@ main thread                                  sim workers (N)
 
 ### 13.3 Testing and tooling
 
-- **Vitest** scenario tests for flock behaviour, ported from `sheepherding/test/`: race
-  throughput, jam detection, splitter minimum batch, habituation.
+- **Flock contract tests** (Vitest): the behaviour guarantees in §4.1, run against whichever
+  model is current, with tolerances rather than exact values. A model change that keeps them
+  green is safe for the game. Model-internal tests (like those in `sheepherding/test/`) live
+  with the model.
+- **Throughput benchmarks**: reference races and stations report sheep/min per model version,
+  so tuning changes show up as numbers, not surprises.
 - **Determinism tests**: same seed and inputs give the same hash after N ticks, single- vs
   multi-threaded.
 - **Headless visual tests**: Playwright screenshots of reference scenes (the intro's frame-grab
@@ -649,7 +692,7 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 | Milestone | Goal | Exit criteria |
 |---|---|---|
 | **M0 — Foundations** ✅ | Pixel pipeline, audio engine, voice pipeline, intro cutscene | Intro plays in browser; movie export works |
-| **M1 — A flock in a field** | Port the flock sim; chunked terrain; Gafoop avatar; crook herding; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
+| **M1 — A flock in a field** | Flock contract + current model behind it; chunked terrain; Gafoop avatar; crook herding; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
 | **M2 — The first herdway** | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes |
 | **M3 — Stone Age vertical slice** | Quarry, treadmill power, thinking stones, research, Audit I + Ewehenge, save/load | 2 hours of play from the intro to Audit I |
 | **M4 — Bronze and Iron** | Dogs, gongs, dye sorting, bell-wethers, smelting, lanterns, tunnels, water and wind | Audits II and III playable |
@@ -658,8 +701,10 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 
 ### 14.3 First-build checklist for M1
 
-1. Port `sheepherding/src/sim` into `src/sim/` (keep its tests), with the stimulus interface from
-   the analysis doc §3.3.
+1. Define the flock contract: the input and output types, and the first scenario tests from §4.1
+   (threat/lure response, penning, determinism). Wrap the current `sheepherding` sim behind it
+   as `sheepherding-v1`, extended with multiple stimuli and obstacles (analysis doc §3.3). Add
+   the minimal boids model as a second implementation.
 2. Chunked terrain with the ground shader from the intro (`groundMaterial`).
 3. An instanced sheep renderer (the intro's sheep model baked to instanced parts).
 4. The Gafoop controller and the crook as a threat stimulus.
@@ -674,6 +719,7 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 |---|---|
 | Emergent chaos makes automation feel unreliable | Tech progression is explicitly about reliability (solid sides, lights, curves, travelators). Clear overlays explain every failure. Late tiers trade charm for determinism |
 | Performance with thousands of agents | Chunk sleeping, workers, instancing, budgets from day one, the profiler in CI |
+| The flock model changes a lot during development | Nothing outside the sim depends on model internals (§4.1 contract). Behaviour guarantees are tests. Saves store contract-level state. Throughput benchmarks per model version |
 | Simulation is hard to balance | Data-driven tuning panel (as in `sheepherding`); scenario tests with throughput assertions |
 | Humour wears thin | Systemic comedy (sneezes, stampedes) over scripted jokes; throttle barks; the Almanac only speaks when something is new |
 | Pixel art at scale gets noisy | Readability rules (§10.4), limited palette, outline and highlight passes, no dithering on toon surfaces |
