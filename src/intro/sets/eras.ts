@@ -307,7 +307,7 @@ export class ErasSet implements StageSet {
       ditherOut(g, x - 2, y - 2, w + 6, 64, 1 - vis);
     });
     // the shopping list: fences, gates, dogs, automation
-    const list: [string, string, string][] = [['fences', 'fence', 'FENCES'], ['gates', 'gate', 'GATES'], ['dogs', 'dog', 'DOGS'], ['automation', 'gear', 'AUTOMATION']];
+    const list: [string, string, string][] = [['fences', 'fence', 'FENCES'], ['gates', 'gate', 'GATES'], ['dogs', 'dog', 'DOGS (DIY)'], ['automation', 'gear', 'AUTOMATION']];
     if (t > m.fences - 0.1) {
       rect(g, 40, 26, 400, 52, C.black);
       rect(g, 40, 26, 400, 1, C.straw);

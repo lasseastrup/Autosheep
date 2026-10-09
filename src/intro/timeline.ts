@@ -272,7 +272,8 @@ export function buildTimeline(): Timeline {
     s.sfx(sfx.whoosh, z + 3.0, { dur: 1.2, from: 3000, to: 200, vol: 0.5 });
     s.score('invasion', 0, z + 3.3);
     s.wait(3.6).mark('calm');
-    s.sfx(sfx.birds, s.cursor - 0.2, { dur: 7 }).sfx(sfx.wind, s.cursor - 0.3, { dur: 7, vol: 0.6 });
+    // nothing but wind: everything that was not a sheep is gone
+    s.sfx(sfx.wind, s.cursor - 0.3, { dur: 7, vol: 0.9 });
     s.say('N08', 0.5);
     s.mark('bleat').sfx(sfx.bleat, s.cursor, { pitch: 1.12, len: 0.7 }).wait(1.5);
     s.fadeOut(0.5);
@@ -322,7 +323,8 @@ export function buildTimeline(): Timeline {
     s.mark('hatch').sfx(sfx.hatchPop, s.cursor).wait(1.3);
     s.mark('climb').sfx(sfx.cough, s.cursor + 0.6).wait(1.6);
     s.mark('speech').say('G08', 0.7);
-    s.sfx(sfx.cricket, s.cursor - 0.3, { dur: 2.2 });
+    // no crickets left to fill the silence, so a distant sheep does it
+    s.sfx(sfx.bleat, s.cursor + 0.2, { pitch: 0.9, len: 0.5, vol: 0.35, pan: 0.6 });
     s.wait(1.6).mark('sneeze').sfx(sfx.sneeze, s.cursor);
     s.mark('choo', s.cursor + 0.95);
     // the pastoral music stops dead at the sneeze

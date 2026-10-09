@@ -108,7 +108,7 @@ declare global {
   interface Window {
     __autosheep?: {
       duration: number;
-      shots: { name: string; start: number; end: number }[];
+      shots: { name: string; start: number; end: number; marks: Record<string, number> }[];
       frame: (T: number) => void;
       grab: () => string;
       renderAudio: (sampleRate?: number) => Promise<string>;
@@ -120,7 +120,7 @@ declare global {
 function exposeCaptureApi(): void {
   window.__autosheep = {
     duration: player.tl.duration,
-    shots: player.tl.shots.map((s) => ({ name: s.name, start: s.start, end: s.end })),
+    shots: player.tl.shots.map((s) => ({ name: s.name, start: s.start, end: s.end, marks: s.marks })),
     frame: (T: number) => player.frame(T),
     grab: () => canvas.toDataURL('image/png'),
     renderAudio: async (sampleRate = 48000) => {

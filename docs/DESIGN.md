@@ -33,7 +33,7 @@ Aliens invaded Earth and, by an honest bureaucratic mistake, wiped out the human
 sparing the sheep. Galactic law says an invader may exterminate any species *except the dominant
 one*. The invasion is therefore illegal unless the sheep turn out to be more advanced than the
 humans were. General Gafoop has been exiled to Earth until they are. You cannot teach a sheep
-anything. But you **can** build fences, gates, races, gongs, dogs, treadmills, mills and
+anything. But you **can** build fences, gates, races, gongs, clockwork collies, treadmills, mills and
 railways, and arrange them so cleverly that a civilisation happens *around* the sheep. Sheep walk
 through your systems, and wool, stone, bronze, iron and steam come out the other end. The sheep
 never notice.
@@ -62,7 +62,7 @@ never notice.
 |---|---|---|
 | Conveyor belt | **Herdway**: a fenced lane ("race") that sheep walk along | Throughput depends on sheep speed, spacing and willingness; jams and back-pressure are emergent |
 | Item on a belt | A **sheep carrying a pack** (saddlebag), or the sheep itself (wool grows on it) | The item and the carrier are the same creature; your "belt items" get hungry and scared |
-| Belt motor | **Drivers**: dogs, gongs, walkers, scarecrows | Pressure must be applied correctly (point of balance) and *released*, or flocks split |
+| Belt motor | **Drivers**: Gafoop's crook, gongs, clockwork collies, scarecrows | Pressure must be applied correctly (point of balance) and *released*, or flocks split |
 | Inserter | **Gates** and **loading pens** | Timing, batching (sheep hate being alone) and priming delays |
 | Splitter / filter | **Splitter gates**, **dye sorters** | Sort by colour tag, breed or load. Shed groups that are too small run back |
 | Underground belt | **Tunnels** and **bridges** | Sheep refuse dark tunnels; lanterns are the "upgrade" |
@@ -72,7 +72,7 @@ never notice.
 | Power | Treadmills → water wheels → windmills → steam | Early power is literally sheep walking in circles |
 | Trains | **Drove roads** with robodogs → **sheep rail** | Batch logistics over long distances |
 | Science packs | **Insights**: Notions → Theories → Treatises → Patents | Produced by "pondering stations" that sheep stare at. Do not ask how |
-| Biters | **Wolves**, storms, sneezes | Threats cause panic cascades rather than destroying things |
+| Biters | **Hazards**: storms, sneezes, leftover human machines | Threats cause panic cascades rather than destroying things |
 | Rocket launch | *(post-campaign)* **Ewe-nity 1** | A sheep must sign the surrender form, in orbit |
 
 ---
@@ -98,7 +98,8 @@ never notice.
 7. Gafoop crash-lands in a meadow, gives a rousing speech, a sheep sneezes, and the flock
    scatters. *Sheep, however, are sheep.*
 8. The plan: drag a planet of sheep from the Stone Age through Bronze and Iron to the Industrial
-   Age, using fences, gates, dogs and a great deal of automation.
+   Age, using fences, gates, dogs (there being none left, he will have to build them) and a great
+   deal of automation.
 
 ### 2.2 Cast
 
@@ -110,7 +111,7 @@ never notice.
 | **The Almanac** | Narrator. Codex entries for every tech, sheep breed and disaster | Dry British reference-book voice. Never jokes on purpose |
 | **The sheep** | The workforce, the conveyor belts, the "dominant species" | *Baa.* That is all. They never speak and never get clever |
 | **Bellwether** (unique sheep, Bronze Age) | A sheep with a bell whom the flock follows; a named hero sheep across the campaign | Exactly as clever as the other sheep. Has a bell |
-| Wolves, foxes, goats | Hazards and, optionally, a rival "species" in later modes | Goats are smug |
+| Leftover human machines | Hazards: car alarms, motion-sensor lights, sprinklers, a robot lawnmower that still mows | Still running on schedule after the end of the world |
 
 ### 2.3 Narrative delivery
 
@@ -137,6 +138,10 @@ Do:
   scripted gag.
 - Keep humans offscreen after the intro; their absence is a running quiet joke (ruins, a lone
   traffic light still blinking).
+- **Only sheep are alive on Earth.** The invasion exterminated every species except the dominant
+  one: no dogs, wolves, birds or insects (plants survived; the Hegemony filed them as scenery).
+  Every driver is Gafoop, a device or a machine, and the countryside is eerily quiet apart from
+  bleats, wind and leftover human gadgets.
 
 Don't:
 - Anthropomorphise the sheep (no sheep speech, no "sheep scientists").
@@ -251,7 +256,7 @@ multi-threading and save-safe determinism.
 - **Wild flocks** roam the map and are captured by herding them into pens (the early game is
   literally gathering your workforce).
 - **Breeding** needs grass, rest and calm. Lambing season (spring) produces lambs that follow
-  their mothers, and ewes with lambs stand their ground against dogs.
+  their mothers, and ewes with lambs stand their ground against mechanical collies.
 - **Population cap** comes from food (pasture and hay) and from shelter (barns) in winter.
 - **Target scale**: hundreds of sheep in the Stone Age, 2,000–5,000 active in the Industrial
   Age, more asleep.
@@ -266,11 +271,11 @@ multi-threading and save-safe determinism.
 |---|---|
 | **Herdway** | Any path sheep are meant to travel. Built from lanes, races, ramps, tunnels and bridges |
 | **Race** | A fenced lane one or two sheep wide (the real livestock-handling word) |
-| **Driver** | Something that applies pressure to move sheep: dog, gong, walker, scarecrow, Gafoop |
+| **Driver** | Something that applies pressure to move sheep: Gafoop, gong, clockwork collie, walker, scarecrow |
 | **Lure** | Something that attracts: grass, salt lick, hay, bell-wether, light, a quiet companion |
 | **Valve** | Controls flow: gate, turnstile, stop paddle |
 | **Router** | Splits or sorts: splitter gate, dye sorter, tub |
-| **Buffer** | Holds sheep: pen, paddock, an orbiting dog "holding" a flock |
+| **Buffer** | Holds sheep: pen, paddock, an orbiting collie "holding" a flock |
 | **Station** | A building sheep pass through to work or be processed |
 
 ### 5.2 How sheep move through infrastructure (the rules)
@@ -293,14 +298,14 @@ These rules come from real livestock handling (Temple Grandin's work, and the et
    shadows, puddles, sudden floor changes and dark tunnel mouths. Lanterns and paving are passive
    routing tools.
 7. **Uphill is easier than downhill.** Sheep prefer moving uphill; terrain shapes routes.
-8. **Isolation is aversive.** A lone sheep tries to rejoin others, even past a dog. Stations
+8. **Isolation is aversive.** A lone sheep tries to rejoin others, even past a driver. Stations
    process sheep in batches of ≥ 4, or need a "companion" fixture (later: a mirror).
 9. **Small shed groups run back.** A splitter must cut groups above a minimum size (≈ a quarter
    of the local flock), or the cut-off sheep flow back to the main group.
 10. **Hunger leaks.** Lines that pass lush grass lose hungry sheep to grazing. Route races
     through bare ground or feed sheep before dispatching them.
 11. **Fear is contagious and fast.** Alarm spreads faster than sheep run, by line of sight.
-    Stone walls are firebreaks; a single sneeze or wolf can cascade through a whole site.
+    Stone walls are firebreaks; a single sneeze or car alarm can cascade through a whole site.
 12. **Habituation.** Static scarecrows lose effect after about 40 seconds of exposure. Moving or
     noisy devices (gongs, whistles) stay effective.
 
@@ -333,12 +338,12 @@ Players see throughput live on every race (a small pixel counter) and in the Flo
 |---|---|---|---|---|---|
 | **Barriers** | Wattle hurdle, drystone wall | Bronze-capped wall | Iron hurdle (see-through, ram-proof) | Brick wall, ha-ha (sunken fence) | Force fence |
 | **Races** | Wattle lane | Curved race, tub | Lit race, bridge, tunnel | Travelator, sheep lift | Tractor tube |
-| **Drivers** | Gafoop's crook, scarecrow, wind chimes | Gong, trained dog, bell-wether | Clockwork walker, windmill paddle | Robodog (programmable), steam whistle | Grav-pulse |
+| **Drivers** | Gafoop's crook, scarecrow, wind chimes | Gong, bell-wether, bronze automaton herder | Clockwork collie, windmill paddle | Steam collie (programmable), steam whistle | Grav-pulse |
 | **Lures** | Grass patch, salt lick | Hay rack, bell-wether | Lantern | Feed conveyor | Mood beam |
 | **Valves** | Hand gate (Gafoop toggles) | Counterweight gate (opens by load) | Turnstile (counts), timed gate | Signal gate (logic) | Phase gate |
 | **Routers** | Splitting hurdle | Dye sorter | Collar sorter, tub splitter | Pneumatic shunt | Teleport pad |
 | **Buffers** | Pen | Paddock with water | Covered fold | Stockyard with silo | Stasis pen |
-| **Long range** | Drove (Gafoop-led) | Dog drove | Drove road with waypoints | Sheep rail, depots, signals | Orbital drop |
+| **Long range** | Drove (Gafoop-led) | Automaton drove | Drove road with waypoints | Sheep rail, depots, signals | Orbital drop |
 
 ### 5.5 Failure modes (and why they're fun)
 
@@ -347,7 +352,7 @@ Players see throughput live on every race (a small pixel counter) and in the Flo
 | **Jam** | Over-pressure, a dead end, a balk point | Sheep bunch, then turn and push back upstream | Release pressure, curve the race, add light |
 | **Leak** | Hunger, gaps, see-through sides | Sheep drift out of lines to graze | Feed first, solid sides, avoid grass |
 | **Split** | Too much pressure on a large flock | The flock tears into groups that scatter | Smaller batches, gentler drivers |
-| **Stampede** | Panic cascade (wolf, storm, sneeze, steam whistle near a pen) | Fast, chaotic, sometimes useful | Walls as firebreaks, habituation, calm pens |
+| **Stampede** | Panic cascade (storm, sneeze, car alarm, steam whistle near a pen) | Fast, chaotic, sometimes useful | Walls as firebreaks, habituation, calm pens |
 | **Strike** | Fatigue and stress too high | Sheep lie down in the race | Rest pens, rotation, gentle tech |
 
 Failures never destroy buildings. They cost time and stress, which costs wool and output.
@@ -440,7 +445,7 @@ more tiers and takes time.
 | Tier | Insight | Made at | Typical unlocks |
 |---|---|---|---|
 | I | Notions | Thinking stones | Fences, gates, pens, shearing, spinning, quarrying, treadmill |
-| II | Theories | Scriptorium | Bronze, curved races, dogs, dyes and sorting, bell-wethers, gongs |
+| II | Theories | Scriptorium | Bronze, curved races, automaton herders, dyes and sorting, bell-wethers, gongs |
 | III | Treatises | Academy | Iron, lanterns, tunnels, bridges, water and wind power, looms, collar sorting |
 | IV | Patents | Patent office | Steam, travelators, rail, robodogs, signal logic, textile mills |
 
@@ -482,7 +487,8 @@ sign Form 77-B in orbit, then roll credits).
   walls) and lush grass (leaks).
 - **Human ruins**: villages, a motorway service station, a supermarket, a farm with a tractor.
   Searching ruins (by sending sheep through them, of course) yields **Relics**: tech hints and
-  one-off bonuses, each with an Almanac entry. Ruins are also where wolves den.
+  one-off bonuses, each with an Almanac entry. Ruins also hold human machines that still switch
+  on by themselves: car alarms, sprinklers, motion-sensor floodlights, a robot lawnmower.
 
 ### 8.2 Time
 
@@ -496,7 +502,7 @@ sign Form 77-B in orbit, then roll credits).
 
 | Hazard | Effect | Counter |
 |---|---|---|
-| Wolves (and foxes for lambs) | Panic cascades, lost sheep | Walls, dogs, lights, gongs |
+| Leftover human machines (car alarms, sprinklers, robot lawnmowers) | Sudden startles, panic cascades | Walls, habituation, or herding a sacrificial sheep past to trip and exhaust them |
 | Thunderstorms | Area panic, lightning | Barns, solid walls, habituation upgrades |
 | Rivers in flood | Washed-out fords | Bridges |
 | Sneezes | A random sheep sneezes. It is always funny | Nothing. Accept it |
@@ -517,7 +523,7 @@ in the early game and becomes a manager later.
 | **Crook push** | Hold LMB on the ground | A threat field under the cursor, exactly as in the `sheepherding` prototype |
 | **Crook pull** | Hold RMB | A lure field (a bribe of oats) |
 | **Megaphone** | Space | Startle pulse with cooldown. Very effective; very stressful |
-| **Whistle commands** | 1–4 | Direct nearby dogs (Bronze+): come by, away, walk up, lie down (real sheepdog commands) |
+| **Whistle commands** | 1–4 | Direct nearby mechanical herders (Iron+): come by, away, walk up, lie down (real sheepdog commands, learned from human books) |
 | **Build mode** | B / toolbar | Grid placement, drag-to-draw fences and races, rotation, blueprints (copy/paste) |
 | Inspect | Hover a sheep | Name (auto-generated, e.g. "Dolly 3,412"), stats, pack, tag, last opinion ("Baa") |
 
@@ -695,7 +701,7 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 | **M1 — A flock in a field** | Flock contract + current model behind it; chunked terrain; Gafoop avatar; crook herding; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
 | **M2 — The first herdway** | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes |
 | **M3 — Stone Age vertical slice** | Quarry, treadmill power, thinking stones, research, Audit I + Ewehenge, save/load | 2 hours of play from the intro to Audit I |
-| **M4 — Bronze and Iron** | Dogs, gongs, dye sorting, bell-wethers, smelting, lanterns, tunnels, water and wind | Audits II and III playable |
+| **M4 — Bronze and Iron** | Automaton herders, clockwork collies, gongs, dye sorting, bell-wethers, smelting, lanterns, tunnels, water and wind | Audits II and III playable |
 | **M5 — Industrial** | Steam, travelators, rail, robodogs, signal logic; performance work for 5k sheep | Audit IV playable at target performance |
 | **M6 — Content and polish** | Breeds, hazards, seasons, cutscenes, voice, balancing, accessibility | Campaign complete; external playtest |
 
@@ -727,19 +733,22 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 
 ---
 
-## 16. Open questions
+## 16. Decisions and open questions
 
-1. **Platform priority**: web-only first (fast iteration, shareable), or Steam desktop from the
-   start?
-2. **Campaign versus sandbox**: is the Audit structure the main mode, with a free-play sandbox
-   alongside, or a single persistent world?
-3. **Multiplayer**: co-op Gafoop and Blorp later? It affects determinism design early.
-4. **Combat**: wolves as a light hazard (current plan) or a stronger "biters" pressure
-   (goats?) for players who want it?
-5. **Sheep welfare tone**: shearing and hauling are fine. Do we ever show sheep "used up"? The
-   proposal is no: tired sheep rest and stressed sheep recover. Nothing bad ever happens to a
-   sheep.
-6. **Session length and pacing targets** for the first Audit (proposal: about 90 minutes).
+Decided (October 2026):
+
+| Question | Decision |
+|---|---|
+| Flock code | Copied into Autosheep as `sheepherding-v1` behind the flock contract; later sheepherding improvements are ported by hand |
+| Early herding feel | Messy early, reliable later: Stone Age lanes leak and jam; reliability is what tech buys |
+| Platform | Web first; desktop packaging later |
+| Threats | Light hazards only, and only sheep are alive (see the tone guide) |
+| Mode | Audit campaign plus a separate sandbox (default taken) |
+| Multiplayer | Not planned; the sim stays deterministic anyway (default taken) |
+| Sheep welfare | Nothing bad ever happens to a sheep: tired sheep rest, stressed sheep recover (default taken) |
+| Pacing | About 90 minutes to Audit I (default taken, to verify in playtests) |
+
+Still open: nothing blocking M1.
 
 ---
 
@@ -754,7 +763,11 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 > animal that is mostly wool.
 
 > **STAMPEDE.** The rapid reorganisation of a flock into many smaller flocks, each heading
-> somewhere else. Usually caused by a wolf, a thunderclap, or a sheep.
+> somewhere else. Usually caused by a car alarm, a thunderclap, or a sheep.
+
+> **THE DOG.** A loyal four-legged companion of the humans, discontinued in the invasion along
+> with everything else that was not a sheep. General Gafoop has since built several from the
+> pictures. They are made of brass and do not fetch.
 
 > **FORM 77-B.** The surrender of a planet, in triplicate. It requires the signature of the
 > dominant species. The first copy was eaten. Pens are provided by the invader.
