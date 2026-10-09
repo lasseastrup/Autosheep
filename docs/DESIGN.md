@@ -15,7 +15,7 @@
 | Stack | TypeScript, three.js, Vite. Flock sim in Web Workers |
 | Tone | Futurama, Rick and Morty, The Hitchhiker's Guide to the Galaxy: dry, absurd, warm |
 | Comparables | Factorio, Satisfactory, Shapez, Dyson Sphere Program; for flocks: Tiny Glade's gentleness, Untitled Goose Game's slapstick |
-| Status | Intro cutscene and pixel pipeline built (M0). This doc defines M1 onward |
+| Status | M0 done (intro, pixel pipeline). M1 playable: one level, herd 30 sheep into a pen |
 
 Related documents:
 
@@ -698,7 +698,7 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 | Milestone | Goal | Exit criteria |
 |---|---|---|
 | **M0 — Foundations** ✅ | Pixel pipeline, audio engine, voice pipeline, intro cutscene | Intro plays in browser; movie export works |
-| **M1 — A flock in a field** | Flock contract + current model behind it; chunked terrain; Gafoop avatar; crook herding; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
+| **M1 — A flock in a field** 🟡 | Flock contract + current model behind it; chunked terrain; Gafoop avatar; crook herding; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
 | **M2 — The first herdway** | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes |
 | **M3 — Stone Age vertical slice** | Quarry, treadmill power, thinking stones, research, Audit I + Ewehenge, save/load | 2 hours of play from the intro to Audit I |
 | **M4 — Bronze and Iron** | Automaton herders, clockwork collies, gongs, dye sorting, bell-wethers, smelting, lanterns, tunnels, water and wind | Audits II and III playable |
@@ -707,15 +707,22 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 
 ### 14.3 First-build checklist for M1
 
-1. Define the flock contract: the input and output types, and the first scenario tests from §4.1
+1. ✅ Define the flock contract: the input and output types, and the first scenario tests from §4.1
    (threat/lure response, penning, determinism). Wrap the current `sheepherding` sim behind it
    as `sheepherding-v1`, extended with multiple stimuli and obstacles (analysis doc §3.3). Add
    the minimal boids model as a second implementation.
-2. Chunked terrain with the ground shader from the intro (`groundMaterial`).
-3. An instanced sheep renderer (the intro's sheep model baked to instanced parts).
-4. The Gafoop controller and the crook as a threat stimulus.
-5. Fences as distance-field obstacles; a pen; the "herd into pen" goal.
-6. Switch the game camera to 640×360 with integer upscaling.
+2. 🟡 Terrain with the ground shader from the intro (`groundMaterial`): done as one mesh;
+   chunking waits for maps big enough to need it.
+3. ⏳ An instanced sheep renderer. M1 draws each sheep as the intro's animated model, which is
+   fine up to about a hundred sheep; instancing is needed before M3's flock sizes.
+4. ✅ The Gafoop controller: the crook (threat), plus a feed bucket (lure) and a megaphone
+   (startle).
+5. ✅ Fences as capsule segments in a bucket grid (steering ray casts, side-preserving
+   collision); a pen with a gate; the "herd into pen" goal and an audit verdict.
+6. ✅ The game camera at 640×360 with integer upscaling, four rotations and stepped zoom.
+
+Still to check for M1's exit criterion: frame rate on real GPUs (only headless software
+rendering has been measured), and whether the gate jam is fun or just slow.
 
 ---
 

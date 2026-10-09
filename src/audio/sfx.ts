@@ -482,3 +482,50 @@ export function gong(a: AudioEngine, when: number, o: Opts = {}): void {
 export function clapperboard(a: AudioEngine, when: number, o: Opts = {}): void {
   stamp(a, when, { ...o, vol: (o.vol ?? 1) * 0.6 });
 }
+
+/** Gafoop through a cheap megaphone: a distorted, nasal "WAH-WAAH" squawk. */
+export function megaphone(a: AudioEngine, when: number, o: Opts = {}): void {
+  const dest = out(a, o, 0.35);
+  const shaper = a.ctx.createWaveShaper();
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const x = (i / 255) * 2 - 1;
+    curve[i] = Math.tanh(x * 4);
+  }
+  shaper.curve = curve;
+  const bp = a.filter('bandpass', 1300, 1.6, dest);
+  shaper.connect(bp);
+  const pre = a.gain(0, shaper);
+  const f0 = 190 * (o.pitch ?? 1);
+  // two syllables, the second longer and falling
+  const syl: [number, number, number][] = [[0, 0.16, 1.1], [0.2, 0.42, 0.85]];
+  for (const [t, len, p] of syl) {
+    const s = a.osc('sawtooth', f0 * p * 1.1, when + t, when + t + len + 0.05, pre);
+    s.frequency.exponentialRampToValueAtTime(f0 * p, when + t + len);
+    const depth = a.gain(f0 * 0.04);
+    depth.connect(s.frequency);
+    a.osc('sine', 7, when + t, when + t + len + 0.05, depth);
+  }
+  pre.gain.setValueAtTime(0, when);
+  pre.gain.linearRampToValueAtTime(0.9, when + 0.02);
+  pre.gain.setValueAtTime(0.9, when + 0.16);
+  pre.gain.linearRampToValueAtTime(0.1, when + 0.19);
+  pre.gain.linearRampToValueAtTime(0.9, when + 0.22);
+  pre.gain.setValueAtTime(0.9, when + 0.55);
+  pre.gain.linearRampToValueAtTime(0, when + 0.66);
+  // feedback whine on top
+  const w = a.gain(0, dest);
+  a.env(w.gain, when, 0.05, 0.4, 0.2, 0.05);
+  a.osc('sine', 2900, when, when + 0.75, w);
+}
+
+/** A bucket of feed being shaken: dry rattling pellets. */
+export function rattle(a: AudioEngine, when: number, o: Opts = {}): void {
+  const dur = o.dur ?? 0.5;
+  const dest = out(a, o, 0.25);
+  for (let t = 0; t < dur; t += 0.045) {
+    const g = a.gain(0, a.filter('bandpass', 3200 + ((t * 977) % 1) * 1800, 3, dest));
+    a.env(g.gain, when + t, 0.002, 0.008, 0.03, 0.8);
+    a.noiseSrc(when + t, when + t + 0.06, g, 1.4);
+  }
+}

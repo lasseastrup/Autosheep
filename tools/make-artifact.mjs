@@ -9,7 +9,7 @@ const scripts = pick(/<script type="module"[^>]*>([\s\S]*?)<\/script>/g);
 const styles = pick(/<style[^>]*>([\s\S]*?)<\/style>/g);
 const body = /<body>([\s\S]*?)<\/body>/.exec(src)[1].replace(/<script[\s\S]*?<\/script>/g, '').trim();
 
-const page = `<title>Autosheep Intro</title>
+const page = `<title>Autosheep</title>
 <style>
 /* single dark look: a black cinema around the pixel-art screen */
 :root { --bg: #18141a; --hint: #625565; color-scheme: dark; }

@@ -3,21 +3,30 @@
 An isometric pixel-art **sheep-herding automation game**. Aliens invaded Earth, mistook sheep
 for the dominant species, and exterminated the humans instead. Galactic law now demands that the
 sheep be more advanced than the humans were. General Gafoop has been exiled to Earth to make it so.
-Instead of conveyor belts, you build fences, gates, races, dogs and machines that herd sheep
+Instead of conveyor belts, you build fences, gates, races and machines that herd sheep
 through a civilisation, from the Stone Age to the Industrial Age.
 
-**Status:** M0. The pixel-art render pipeline, audio engine, voice pipeline and a 3½-minute intro
-cutscene are done. The game design is in [`docs/DESIGN.md`](docs/DESIGN.md).
+**Status:** M1. A 3½-minute intro cutscene, then the first playable level: herd 30 sheep across a
+meadow and into a pen. The flock runs behind a model-independent contract with behaviour tests.
+The game design is in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Running
 
 ```
 npm install
 npm run dev          # http://127.0.0.1:5173 — click to play the intro (sound on)
+npm test             # flock behaviour tests
 ```
 
-In the intro: `Esc` skips to the title, `S` toggles subtitles. Development query flags:
-`?t=95` starts at 95 s, `?nosubs` hides subtitles, `?scale=3` forces the upscale factor.
+In the intro: `Esc` skips to the title, `S` toggles subtitles, `G` on the start screen skips
+straight to the game. Development query flags: `?game` opens the game directly, `?t=95` starts
+the intro at 95 s, `?nosubs` hides subtitles, `?scale=3` forces the upscale factor.
+
+**Playing.** Gafoop hovers after the mouse. Hold the left button to press the sheep with his
+crook, hold the right button to rattle a feed bucket (sheep follow it), `Space` honks the
+megaphone (everything nearby bolts), `G` opens and shuts the pen gate, `Q`/`E` rotate the view,
+the wheel zooms and `WASD` pans. Pen all 30 sheep and shut the gate to pass the audit. Sheep
+moved too hard jam in the gateway; ease off, or bring the bucket.
 
 | Command | What it does |
 |---|---|
@@ -26,10 +35,11 @@ In the intro: `Esc` skips to the title, `S` toggles subtitles. Development query
 | `npm run frames -- <dir> 12.5 40 …` | Render specific intro frames to PNG (`shots` = one per shot) |
 | `npm run movie -- --workers 2` | Render the whole intro to `out/movie/autosheep-intro.mp4` (headless Chromium + ffmpeg, resumable) |
 | `npm run voice -- <kokoro.onnx> <voices.bin> [ids…]` | Regenerate voice lines with Kokoro TTS (see below) |
+| `node tools/game-shot.mjs <dir> start\|herd` | Headless game screenshots; `herd` has a scripted shepherd play the level to the end |
 
 ## How it looks the way it looks
 
-Scenes are ordinary three.js 3D, rendered at 480×270 and turned into pixel art in
+Scenes are ordinary three.js 3D, rendered at 480×270 (the film) or 640×360 (the game) and turned into pixel art in
 `src/engine/pixelRenderer.ts`:
 
 1. stepped toon lighting with hue-shifted shadow and highlight bands (`src/engine/toon.ts`);
@@ -53,13 +63,28 @@ src/engine/      pixel renderer, toon materials, palettes, bitmap fonts, UI help
 src/art/         sheep, Gafoop & Blorp, humans, ships, Earth, props, particles
 src/audio/       WebAudio engine, synthesised SFX, tracker-style music + score
 src/intro/       the cutscene: lines.json (script), timeline.ts (edit list), player.ts, sets/
+src/sim/         the flock contract, behaviour scenarios, and models/ behind it
+src/game/        the game: camera, level, flock view, Gafoop, HUD, audio
+tests/           flock contract tests (vitest), run against every model
 tools/           frame grabs, movie render, artifact build, voice generation, dev test pages
 docs/            DESIGN.md (game design), research/ (rendering, flock-sim analysis)
 assets/voice/    generated voice lines (mp3)
 ```
 
-The flock simulation the game will build on lives in the `sheepherding` repo; see
-[`docs/research/sheepherding-repo-analysis.md`](docs/research/sheepherding-repo-analysis.md).
+## The flock
+
+The game never touches flock internals. `src/sim/contract.ts` is the whole interface: the game
+passes stimuli (threats, lures, startles) and fence segments in and reads position, heading,
+speed, state, fear and group out. The model is still changing, so it is replaceable:
+
+- `models/sheepherding-v1` is the [sheepherding](https://github.com/lasseastrup/sheepherding)
+  sim (commit a470408), copied in and extended with several stimuli at once, lures, startles and
+  fences (ray-cast steering and side-preserving collision). Changes are marked "Autosheep".
+- `models/boids` is a deliberately simple second model that keeps the contract honest.
+
+`tests/flock-contract.test.ts` holds the behaviour guarantees from DESIGN.md §4.1 (flee, follow,
+containment, startle, determinism, penning through a gate, habituation, walls blocking sight).
+See also [`docs/research/sheepherding-repo-analysis.md`](docs/research/sheepherding-repo-analysis.md).
 
 ## Credits
 
