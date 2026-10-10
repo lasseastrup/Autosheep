@@ -1,4 +1,4 @@
-import { flowTarget, type Stimulus } from '../../contract';
+import { flowTarget, inChute, type Stimulus } from '../../contract';
 import type { SimConfig } from './config';
 import { Flock, FEAR_HIST, MAX_NEIGHBOURS } from './flock';
 import type { Obstacles } from './obstacles';
@@ -51,6 +51,7 @@ export class Perception {
     time: number,
     dt: number,
     flows: readonly Stimulus[] = [],
+    chutes: readonly Stimulus[] = [],
   ): void {
     const cfg = this.cfg;
     const P = cfg.pressure;
@@ -58,6 +59,24 @@ export class Perception {
     const cosBlind = Math.cos(((360 - cfg.sheep.fovDeg) / 2) * (Math.PI / 180));
     const histSlot = flock.histHead;
     const sight = cfg.obstacle.sightFactor;
+
+    // Autosheep: who is being handled in a chute. A handled sheep cannot see the flock and is
+    // not left behind by it (no pining, no isolation stress); steering walks it up the chute.
+    for (let i = 0; i < n; i++) {
+      flock.handled[i] = 0;
+      for (let k = 0; k < chutes.length; k++) {
+        const c = chutes[k];
+        const at = inChute(c, flock.px[i], flock.py[i]);
+        if (!at) continue;
+        flock.handled[i] = 1;
+        flock.chuteX[i] = at.ux;
+        flock.chuteY[i] = at.uy;
+        flock.chuteDrive[i] = c.strength;
+        flock.chuteRoom[i] = (c.lookahead ?? 0) > 0 ? Infinity : at.len - at.along - 0.45;
+        flock.fenced[i] = 1;
+        break;
+      }
+    }
 
     // running-toward-me test needs the previous slot's values, so read history before writing
     for (let i = 0; i < n; i++) {

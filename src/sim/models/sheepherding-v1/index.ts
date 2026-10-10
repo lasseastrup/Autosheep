@@ -3,9 +3,11 @@ import type { DeepPartial, SimConfig } from './config';
 import { Sim } from './sim';
 
 /**
- * `sheepherding-v1`: the flock model from github.com/lasseastrup/sheepherding at commit
- * a470408 (src/sim), vendored and extended for Autosheep. Changes from the original are
- * marked "Autosheep" in the source. Improvements made upstream are ported by hand.
+ * `sheepherding-v1`: Autosheep's flock model. It started as the model in
+ * github.com/lasseastrup/sheepherding at commit a470408 (src/sim) and is now ours, changed
+ * freely to serve the game: whatever a device or level needs from the flock is added here
+ * (behind the contract) rather than worked around in the game. Changes from the original are
+ * marked "Autosheep"; ideas from upstream are ported by hand when they help.
  */
 export class SheepherdingV1 implements FlockModel {
   readonly name = 'sheepherding-v1';

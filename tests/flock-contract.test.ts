@@ -47,6 +47,30 @@ describe.each(MODELS)('$name', ({ make, full }) => {
     expect(countIn(m, 0, 0, 60, 26)).toBeGreaterThanOrEqual(5);
   });
 
+  test.each([4, 1])('a chute walks its batch out, even with the flock behind it (%i in it)', (batch) => {
+    // a chute along y = 30 from x = 20 to 28, solid walls, the back shut; the flock grazes behind
+    const wall = (ax: number, ay: number, bx: number, by: number, solid = true): Obstacle => ({ ax, ay, bx, by, radius: 0.08, solid });
+    const walls = [wall(20, 28.8, 40, 28.8), wall(20, 31.2, 40, 31.2), wall(20, 28.8, 20, 31.2)];
+    const front = wall(28, 28.8, 28, 31.2);
+    const inside = [21, 22.5, 24, 25.5].slice(0, batch).map((x) => ({ x, y: 30, heading: 0 }));
+    const m = make();
+    m.init({ seed: 9, width: 60, height: 60, sheep: [...inside, ...cluster(12, 10, 30, 9)] });
+    const chute = (strength: number, lookahead: number) => ({ id: 1, kind: 'chute' as const, x: 20, y: 30, path: [{ x: 20, y: 30 }, { x: 28, y: 30 }], radius: 1.2, strength, lookahead });
+    // front shut: they walk up to it and wait there
+    m.setObstacles([...walls, front]);
+    run(m, 12, () => [chute(1, 0)]);
+    // packed up against the front, nose to tail
+    const xs = Array.from({ length: batch }, (_, i) => m.out.x[i]).sort((a, b) => b - a);
+    xs.forEach((x, k) => {
+      expect(x).toBeGreaterThan(28 - 1.2 * (k + 1) - 0.5);
+      expect(x).toBeLessThan(28);
+    });
+    // front open: out they walk, not back to the flock
+    m.setObstacles(walls);
+    run(m, 12, () => [chute(1, 3)]);
+    for (let i = 0; i < batch; i++) expect(m.out.x[i]).toBeGreaterThan(28.5);
+  });
+
   test('a flap lets sheep through one way only', () => {
     // a corridor 6 m wide along x, with a flap across it at x = 30 that opens eastward
     const side = (y: number): Obstacle => ({ ax: 0, ay: y, bx: 60, by: y, radius: 0.08, solid: false });

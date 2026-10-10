@@ -117,6 +117,12 @@ export class Steering {
       flock.intent[i] = 0;
       const x = flock.px[i];
       const y = flock.py[i];
+      // Autosheep: in a chute there is no choosing; a handled sheep walks up it at the
+      // handler's pace, a body's length behind the one ahead, and cannot turn round
+      if (flock.handled[i]) {
+        this.handle(flock, i, dt);
+        continue;
+      }
       // Autosheep: of all the threats about, I flee the one pressing hardest on me
       const k = flock.threatIdx[i];
       const threat: Threat | null = k >= 0 ? threats[k] : null;
@@ -485,6 +491,29 @@ export class Steering {
     if (flock.fenced[i]) w *= G.fencedPull;
     if (w <= 0.02) return;
     this.lobe(flock.interest, base, dx / dRest, dy / dRest, w);
+  }
+
+  /** Autosheep: a sheep being handled in a chute (see the contract's `chute`). */
+  private handle(flock: Flock, i: number, dt: number): void {
+    const cfg = this.cfg;
+    const hx = flock.chuteX[i];
+    const hy = flock.chuteY[i];
+    const x = flock.px[i];
+    const y = flock.py[i];
+    let room = flock.chuteRoom[i];
+    const cb = i * MAX_CONTACTS;
+    for (let q = 0; q < flock.contactCount[i]; q++) {
+      const j = flock.contacts[cb + q];
+      const dx = flock.px[j] - x;
+      const dy = flock.py[j] - y;
+      const along = dx * hx + dy * hy;
+      const across = Math.abs(-dx * hy + dy * hx);
+      if (along > 0 && across < 0.9) room = Math.min(room, along - 0.95);
+    }
+    const speed = flock.chuteDrive[i] * cfg.walk.speed * flock.speedMult[i];
+    flock.intent[i] = 1;
+    flock.heading[i] = wrapAngle(rotateToward(flock.heading[i], Math.atan2(hy, hx), cfg.kinematics.turnRateDeg.walk * DEG * dt));
+    flock.desiredSpeed[i] = speed * Math.max(0, Math.min(1, room / 0.6));
   }
 
   private fenceDanger(flock: Flock, i: number, base: number, obstacles: Obstacles): void {

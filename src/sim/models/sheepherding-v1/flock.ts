@@ -98,6 +98,12 @@ export class Flock {
   readonly group: Int32Array;
   /** 1 when a fence stands between my group and the rest of the flock */
   readonly fenced: Uint8Array;
+  /** Autosheep: 1 while being handled in a chute: its direction, drive, and room to walk */
+  readonly handled: Uint8Array;
+  readonly chuteX: Float32Array;
+  readonly chuteY: Float32Array;
+  readonly chuteDrive: Float32Array;
+  readonly chuteRoom: Float32Array;
 
   // context maps (scratch, slots per sheep)
   readonly interest: Float32Array;
@@ -143,6 +149,8 @@ export class Flock {
     this.lure = f(); this.lureX = f(); this.lureY = f();
     this.group = new Int32Array(capacity);
     this.fenced = new Uint8Array(capacity);
+    this.handled = new Uint8Array(capacity);
+    this.chuteX = f(); this.chuteY = f(); this.chuteDrive = f(); this.chuteRoom = f();
     this.interest = new Float32Array(capacity * slots);
     this.danger = new Float32Array(capacity * slots);
   }

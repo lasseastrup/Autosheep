@@ -50,9 +50,9 @@ function runLoop(seed: number, minutes: number): { perMinute: number[]; w: Works
 describe('the first herdway', () => {
   test.each([1, 2])('runs unattended for 10 minutes (seed %i)', (seed) => {
     const { perMinute, w, m } = runLoop(seed, 10);
-    // it gets going, and it keeps going
-    expect(w.yarn).toBeGreaterThanOrEqual(25);
-    expect(perMinute.slice(-4).reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(8);
+    // it gets going, and it keeps going (eight seeds made 50 to 80)
+    expect(w.yarn).toBeGreaterThanOrEqual(40);
+    expect(perMinute.slice(-4).reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(14);
     // every stage did its part
     expect(w.shorn).toBeGreaterThanOrEqual(w.yarn);
     // and no sheep got out: all of them are in the pasture, a race or a station

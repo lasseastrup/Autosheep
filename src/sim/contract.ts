@@ -36,9 +36,15 @@ export const STATE_NAMES = ['graze', 'alert', 'walk', 'run', 'rest'] as const;
  *   way a line of sheep keeps going the way it is going. It competes with lures: a sheep
  *   follows whichever pulls hardest, so a station's bait still wins at its door.
  *
+ * - `chute`: a single-file handling race (a station's). Sheep within `radius` of the line
+ *   `path` (back to front) are being handled: they face up it, cannot turn round, do not pine
+ *   for the flock they cannot see, and walk toward the front at `strength` × walking pace,
+ *   keeping a body's length from the sheep ahead. With `lookahead` 0 the front is shut and
+ *   they wait at it; otherwise they walk out and on that far past it.
+ *
  * Still to come, when a milestone needs it: `leader` (a bell-wether the flock follows).
  */
-export type StimulusKind = 'threat' | 'lure' | 'startle' | 'flow';
+export type StimulusKind = 'threat' | 'lure' | 'startle' | 'flow' | 'chute';
 
 export interface Stimulus {
   /** Stable id: the model tracks velocity and habituation per source across ticks. */
@@ -50,9 +56,10 @@ export interface Stimulus {
   strength: number;
   /** Reach in metres: the flight zone of a threat at full pressure, a lure's call distance. */
   radius: number;
-  /** flow only: the line sheep are drawn along, first point to last (x, y are its start) */
+  /** flow and chute: the line sheep are drawn along, first point to last (x, y are its start) */
   path?: readonly { x: number; y: number }[];
-  /** flow only: how far ahead along the path a sheep is drawn to (metres, default 3) */
+  /** flow: how far ahead along the path a sheep is drawn to (default 3). chute: how far past
+   * the front sheep walk on (0: the front is shut) */
   lookahead?: number;
 }
 
@@ -183,4 +190,23 @@ export function segmentT(px: number, py: number, ax: number, ay: number, bx: num
   if (l2 < 1e-12) return 0;
   const t = ((px - ax) * ex + (py - ay) * ey) / l2;
   return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
+/**
+ * Is (x, y) in chute c, and if so how far along it (from the back) and how long it is? A
+ * chute reaches `lookahead` past its front, so sheep keep walking out of an open one.
+ */
+export function inChute(c: Stimulus, x: number, y: number): { along: number; len: number; ux: number; uy: number } | null {
+  const p = c.path;
+  if (!p || p.length < 2) return null;
+  const a = p[0];
+  const b = p[p.length - 1];
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  if (len < 1e-6) return null;
+  const ux = (b.x - a.x) / len;
+  const uy = (b.y - a.y) / len;
+  const along = (x - a.x) * ux + (y - a.y) * uy;
+  const across = Math.abs(-(x - a.x) * uy + (y - a.y) * ux);
+  if (along < 0 || along > len + (c.lookahead ?? 0) || across > c.radius) return null;
+  return { along, len, ux, uy };
 }

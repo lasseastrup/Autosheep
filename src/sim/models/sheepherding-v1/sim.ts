@@ -37,8 +37,9 @@ export class Sim {
   readonly threats: Threat[] = [];
   private readonly startles: PointStimulus[] = [];
   private readonly lures: PointStimulus[] = [];
-  /** Autosheep: races' pulls along their paths */
+  /** Autosheep: races' pulls along their paths, and the stations' handling chutes */
   private readonly flows: Stimulus[] = [];
+  private readonly chutes: Stimulus[] = [];
   /** threat state by stimulus id, kept across steps to measure velocity */
   private readonly tracked = new Map<number, Threat>();
   /** after a startle the flock keeps fleeing from where it came for a moment */
@@ -86,6 +87,7 @@ export class Sim {
     this.startles.length = 0;
     this.lures.length = 0;
     this.flows.length = 0;
+    this.chutes.length = 0;
     const seen = new Set<number>();
     for (const s of stimuli) {
       if (s.kind === 'threat') {
@@ -110,6 +112,8 @@ export class Sim {
         this.lures.push({ x: s.x, y: s.y, strength: s.strength, radius: s.radius });
       } else if (s.kind === 'flow') {
         if (s.path && s.path.length >= 2) this.flows.push(s);
+      } else if (s.kind === 'chute') {
+        if (s.path && s.path.length >= 2) this.chutes.push(s);
       } else {
         this.startles.push({ x: s.x, y: s.y, strength: s.strength, radius: s.radius });
         this.echoes.push({ x: s.x, y: s.y, strength: s.strength * S.echoStrength, radius: s.radius, until: this.time + S.echo });
@@ -131,7 +135,7 @@ export class Sim {
     this.grid.build(f.px, f.py, f.count);
     computeNeighbours(f, this.grid, this.cfg);
     this.groups.update(f, this.grid, this.cfg.group.linkDist, this.cfg.group.shedTolerance, this.cfg.group.strayDist, this.obstacles);
-    this.perception.update(f, this.threats, this.startles, this.lures, this.obstacles, this.time, dt, this.flows);
+    this.perception.update(f, this.threats, this.startles, this.lures, this.obstacles, this.time, dt, this.flows, this.chutes);
     if (this.cfg.behaviourEnabled) this.behaviour.update(f, this.time, dt, this.groups);
     this.steering.update(f, this.threats, dt, this.groups, this.obstacles, this.time);
     this.motion.update(f, dt);

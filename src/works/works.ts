@@ -3,13 +3,15 @@
  * carry, and the stations' cycles. Deterministic and headless; the game draws it, the tests
  * run it for ten simulated minutes.
  *
- * How a station moves sheep (all through the flock contract, so jams stay emergent):
- *   fill     the exit is shut and the chute is baited (a lure at the front, reaching well
- *            out of the intake), so the race's leader walks in and the line follows
+ * How a station moves sheep, all through the flock contract. Its chute is a handling race
+ * (the contract's `chute`): a sheep in it faces up it, cannot turn round and does not pine
+ * for the flock it cannot see. Getting sheep *into* the chute is still up to the flock, so a
+ * badly fed station still starves and a race can still jam.
+ *   fill     the exit is shut and the chute is baited (a lure at the front, reaching well out
+ *            of the intake), so the race's leader walks in and the line follows; those inside
+ *            walk up and pack against the front
  *   work     both doors shut; each sheep is worked on in turn
- *   release  the intake is shut and a sweep (a wicker forcing gate) walks up the chute behind
- *            the batch while a pull from just beyond the exit draws them out. A push that
- *            stands still soon becomes scenery; shoving harder jams them
+ *   release  the intake is shut and the batch walks out of the exit, and on a little
  */
 import type { FlockOutputs, Obstacle, Stimulus } from '../sim/contract';
 import {
@@ -30,10 +32,8 @@ export const WORKS = {
   /** with sheep inside but nobody new for this long, a station works the part batch */
   fillWait: 6,
   fillLure: { strength: 1.2, radius: 18 },
-  /** the sweep: how hard it presses, how far ahead it reaches, how fast it walks up the chute */
-  push: { strength: 0.6, radius: 4, speed: 1 },
-  /** just outside the exit; reaches the back of the chute at full strength */
-  pull: { strength: 1, radius: 2 * (STATION_LEN + 3) },
+  /** how hard the chute walks its sheep up while filling, and how far past the exit it lets out */
+  chute: { fill: 0.6, out: 3 },
   releaseTimeout: 12,
   /** seconds per sheep worked, on top of a second for opening up */
   shear: 1.5,
@@ -56,8 +56,6 @@ export interface StationState {
   done: number;
   /** recent rate, sheep per minute, for the overlay */
   rate: number;
-  /** releases so far: each sweep is a new stimulus, so the flock sees it start afresh */
-  cycles: number;
 }
 
 /** Something the game may want to show: a yarn hung up, a sheep shorn. */
@@ -111,7 +109,7 @@ export class Works {
     this.nextId = Math.max(this.nextId, dev.id + 1);
     this.devices.push(dev);
     if (dev.kind === 'shed' || dev.kind === 'spindle') {
-      this.stations.push({ device: dev as Station, phase: 'fill', since: this.time, lastEntry: this.time, inside: 0, done: 0, rate: 0, cycles: 0 });
+      this.stations.push({ device: dev as Station, phase: 'fill', since: this.time, lastEntry: this.time, inside: 0, done: 0, rate: 0 });
     }
     this.rebuild();
     return dev;
@@ -143,14 +141,14 @@ export class Works {
     for (const s of this.stations) {
       const { back, front, f } = stationFrame(s.device);
       const id = 10000 + s.device.id * 4;
+      const chute = (strength: number, lookahead: number): Stimulus => ({ id: id + 1, kind: 'chute', x: back.x, y: back.y, path: [back, front], radius: LANE_W / 2 + 0.2, strength, lookahead });
       if (s.phase === 'fill') {
-        const at = { x: front.x - f.x * 0.6, y: front.y - f.y * 0.6 };
-        out.push({ id, kind: 'lure', ...at, ...WORKS.fillLure });
-      } else if (s.phase === 'release') {
-        const P = WORKS.push;
-        const k = Math.min(STATION_LEN - 1, 0.3 + P.speed * (this.time - s.since));
-        out.push({ id: 1_000_000 + s.device.id * 1000 + (s.cycles % 1000), kind: 'threat', x: back.x + f.x * k, y: back.y + f.y * k, strength: P.strength, radius: P.radius });
-        out.push({ id: id + 2, kind: 'lure', x: front.x + f.x * 3, y: front.y + f.y * 3, ...WORKS.pull });
+        out.push({ id, kind: 'lure', x: front.x - f.x * 0.6, y: front.y - f.y * 0.6, ...WORKS.fillLure });
+        out.push(chute(WORKS.chute.fill, 0));
+      } else if (s.phase === 'work') {
+        out.push(chute(0, 0));
+      } else {
+        out.push(chute(1, WORKS.chute.out));
       }
     }
     for (const d of this.devices) {
@@ -227,7 +225,6 @@ export class Works {
   private enter(s: StationState, phase: Phase): void {
     s.phase = phase;
     s.since = this.time;
-    if (phase === 'release') s.cycles++;
     // a new fill waits its full time for company, whoever was left inside from before
     if (phase === 'fill') s.lastEntry = this.time;
     this.doorsMoved = true;

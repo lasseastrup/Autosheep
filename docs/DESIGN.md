@@ -185,10 +185,11 @@ therefore built against a stable **flock contract** (below), not against any par
 The model can be retuned, rewritten or swapped while devices, stations, overlays and saves keep
 working.
 
-**Starting point.** The `sheepherding` repo's model is the reference implementation to begin
+**Starting point.** The `sheepherding` repo's model was the reference implementation to begin
 with (the analysis doc §2 describes it as of commit `a470408`). It has behaviour states, a
-perception and fear model, context steering and position-based collision. Expect all of that to
-move; nothing else in the game may reach into it.
+perception and fear model, context steering and position-based collision. Autosheep's copy is
+ours: when the game needs something of the flock, the model gains it, behind the contract,
+instead of the game working round it. Nothing else in the game may reach into it.
 
 **The contract** has three parts:
 
@@ -747,10 +748,13 @@ the flock jamming, never a scripted queue):
 2. ✅ **Flaps**: one-way hurdles across a race (the contract's `oneWay` obstacles), so a loop has
    a direction and a line cannot back up through them.
 3. ✅ **Shearing shed and spindle hut**: solid-walled chutes with a door at each end, holding a
-   batch of four (rule 8). *Fill*: exit shut, the chute baited, the line walks in. *Work*: both
-   shut. *Release*: intake shut, a wicker sweep walks up the chute behind the batch while a pull
-   from just outside draws them out. A push that stands still soon becomes scenery
-   (habituation), and shoving harder makes them jam (rule 2), so the sweep is gentle and moves.
+   batch of four (rule 8). The chute is a handling race (the contract's `chute`): a sheep in it
+   faces up it, cannot turn round and does not pine for the flock it cannot see. *Fill*: exit
+   shut, the chute baited, the line walks in and packs up to the front. *Work*: both shut.
+   *Release*: intake shut, the batch walks out. Getting sheep *into* a station is still the
+   flock's business, so a starved station or a jammed race is still the player's to fix. (A
+   first version pushed batches out with stimuli alone; a third of its releases left sheep
+   behind, a lone sheep pining for the flock behind it, so the model gained the chute.)
 4. ✅ **Packs**: the shed hands each sheep its own fleece to carry; the spindle spins it into
    yarn; a **rack** over a race takes the yarn. Wool grows back in the field (100 s).
 5. ✅ **Salt licks** call a flock from 20 m (a lick in the race mouth gets them out of the
@@ -791,7 +795,7 @@ Decided (October 2026):
 
 | Question | Decision |
 |---|---|
-| Flock code | Copied into Autosheep as `sheepherding-v1` behind the flock contract; later sheepherding improvements are ported by hand |
+| Flock code | Ours: copied in as `sheepherding-v1` and changed freely to serve the game (flaps, race flow, handling chutes, lures behind walls so far). The contract stays the boundary between game and model; the boids double only has to meet the basics. Upstream sheepherding ideas are ported by hand when they help |
 | Early herding feel | Messy early, reliable later: Stone Age lanes leak and jam; reliability is what tech buys |
 | Platform | Web first; desktop packaging later |
 | Threats | Light hazards only, and only sheep are alive (see the tone guide) |

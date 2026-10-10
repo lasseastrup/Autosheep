@@ -105,14 +105,15 @@ assets/voice/    generated voice lines (mp3)
 ## The flock
 
 The game never touches flock internals. `src/sim/contract.ts` is the whole interface: the game
-passes stimuli (threats, lures, startles) and fence segments in and reads position, heading,
-speed, state, fear and group out. The model is still changing, so it is replaceable:
+passes stimuli (threats, lures, startles, race flows, handling chutes) and fence segments
+(some of them one-way flaps) in and reads position, heading, speed, state, fear and group out.
 
-- `models/sheepherding-v1` is the [sheepherding](https://github.com/lasseastrup/sheepherding)
-  sim (commit a470408), copied in and extended with several stimuli at once, lures, startles and
-  fences (ray-cast steering and side-preserving collision). Groups are fence-aware, so a sheep
-  fenced off from its flock stops pining for it, and the flock is retuned to be less magnetic
-  (weaker running cohesion, flee bend and isolation panic). Changes are marked "Autosheep".
+- `models/sheepherding-v1` is our flock model. It started as the
+  [sheepherding](https://github.com/lasseastrup/sheepherding) sim (commit a470408) and is changed
+  freely to serve the game: several stimuli at once, lures, startles, fences (ray-cast steering
+  and side-preserving collision), one-way flaps, races that draw their sheep along, and chutes
+  in which sheep are handled. Groups are fence-aware, so a sheep fenced off from its flock stops
+  pining for it, and the flock is retuned to be less magnetic. Changes are marked "Autosheep".
 - `models/boids` is a deliberately simple second model that keeps the contract honest.
 
 `tests/flock-contract.test.ts` holds the behaviour guarantees from DESIGN.md §4.1 (flee, follow,

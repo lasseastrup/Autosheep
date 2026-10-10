@@ -1,4 +1,4 @@
-import { behindFlap, flowTarget, hashOutputs, segmentT, SheepState, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
+import { behindFlap, flowTarget, hashOutputs, inChute, segmentT, SheepState, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
 
 /**
  * A deliberately simple boids flock behind the same contract. It is not meant to be fun to
@@ -71,7 +71,7 @@ export class BoidsModel implements FlockModel {
     for (let i = 0; i < n; i++) {
       let f = prevFear[i] * Math.exp(-dt / 4);
       for (const s of stimuli) {
-        if (s.kind === 'lure' || s.kind === 'flow') continue;
+        if (s.kind === 'lure' || s.kind === 'flow' || s.kind === 'chute') continue;
         const d = Math.hypot(s.x - x[i], s.y - y[i]);
         const reach = s.kind === 'startle' ? s.radius : s.radius * 0.6;
         f = Math.max(f, Math.min(1, s.strength * smooth(reach, reach * 0.3, d)));
@@ -106,6 +106,17 @@ export class BoidsModel implements FlockModel {
         dy += cy * k + (ay / cn) * 0.3;
       }
       let walking = false;
+      // a chute takes over: up it at walking pace, stopping short of a shut front
+      const chute = stimuli.find((s) => s.kind === 'chute' && inChute(s, x[i], y[i]));
+      if (chute) {
+        const at = inChute(chute, x[i], y[i])!;
+        const room = (chute.lookahead ?? 0) > 0 ? Infinity : at.len - at.along - 0.45;
+        const v = chute.strength * 1.1 * Math.max(0, Math.min(1, room / 0.6));
+        const k = 1 - Math.exp(-dt / 0.3);
+        vx[i] += (at.ux * v - vx[i]) * k;
+        vy[i] += (at.uy * v - vy[i]) * k;
+        continue;
+      }
       for (const s of stimuli) {
         if (s.kind === 'flow') {
           // a race: pulled toward a point a little ahead along it
