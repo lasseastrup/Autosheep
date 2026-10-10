@@ -32,6 +32,7 @@ gateway; ease off, or bring the bucket.
 **On a phone** (landscape is best), drag to fly; on-screen buttons appear after the first touch:
 FEED (hold, while flying with the other thumb), HONK, GATE, and turn and zoom. The gate and honk
 rows of the top-right panel and the buttons on the verdict card can also be clicked with a mouse.
+`F` (or clicking the objective panel) shows the frame rate, main-thread time and draw calls.
 
 | Command | What it does |
 |---|---|

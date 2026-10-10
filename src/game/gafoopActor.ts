@@ -93,10 +93,10 @@ export class GafoopActor {
     if (target) {
       want.subVectors(target, this.pos).setY(0);
       const d = want.length();
-      if (d > 0.05) want.multiplyScalar(Math.min(this.maxSpeed, d * 2.5) / d);
+      if (d > 0.05) want.multiplyScalar(Math.min(this.maxSpeed, d * 5) / d);
       else want.set(0, 0, 0);
     }
-    this.vel.lerp(want, 1 - Math.exp(-dt * 7));
+    this.vel.lerp(want, 1 - Math.exp(-dt * 14));
     this.pos.addScaledVector(this.vel, dt);
     this.pos.x = Math.min(bounds.w - 1, Math.max(1, this.pos.x));
     this.pos.z = Math.min(bounds.h - 1, Math.max(1, this.pos.z));

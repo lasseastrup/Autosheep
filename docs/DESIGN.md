@@ -723,8 +723,9 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
    the minimal boids model as a second implementation.
 2. 🟡 Terrain with the ground shader from the intro (`groundMaterial`): done as one mesh;
    chunking waits for maps big enough to need it.
-3. ⏳ An instanced sheep renderer. M1 draws each sheep as the intro's animated model, which is
-   fine up to about a hundred sheep; instancing is needed before M3's flock sizes.
+3. ✅ An instanced sheep renderer: template sheep (the intro's model, at a lower detail) are
+   posed per sheep and their parts copied into one instanced mesh per part, about 17 draw calls
+   for any flock size. Static scenery is merged per material and per 32 m chunk.
 4. ✅ The Gafoop controller: his presence is the threat (proximity only, no button), plus a
    feed bucket (lure) and a megaphone (startle).
 5. ✅ Fences as capsule segments in a bucket grid (steering ray casts, side-preserving

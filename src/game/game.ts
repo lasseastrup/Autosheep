@@ -90,6 +90,9 @@ export class Game {
   /** the screen is taller than wide */
   portrait = false;
   private readonly held = new Set<ButtonId>();
+  /** frame-rate readout (F, or click the objective panel); fps and ms come from the main loop */
+  showPerf = false;
+  readonly perf = { fps: 0, ms: 0, calls: 0, tris: 0 };
   /** called once a frame has been drawn (for tooling) */
   onFrame: (() => void) | null = null;
 
@@ -248,7 +251,12 @@ export class Game {
 
     if (draw) {
       this.drawOverlay(dt);
+      const info = this.pr.renderer.info;
+      info.autoReset = false;
+      info.reset();
       this.pr.render(this.scene, this.cam.camera);
+      this.perf.calls = info.render.calls;
+      this.perf.tris = info.render.triangles;
     }
     inp.hits.length = 0;
     this.onFrame?.();
@@ -300,6 +308,7 @@ export class Game {
       case 'zoomOut': inp.wheel += 1; break;
       case 'again': inp.hits.push('r'); break;
       case 'bigger': inp.hits.push('n'); break;
+      case 'perf': inp.hits.push('f'); break;
     }
   }
 
@@ -313,6 +322,7 @@ export class Game {
       if (k === 'q') this.cam.rotate(-1);
       if (k === 'e') this.cam.rotate(1);
       if (k === 'h') this.showHelp = !this.showHelp;
+      if (k === 'f') this.showPerf = !this.showPerf;
       if (!this.started) continue;
       if (k === 'g') this.toggleGate();
       if (k === ' ' && this.time - this.honkAt >= HONK.cooldown) {
@@ -421,6 +431,7 @@ export class Game {
       feeding: gp.tool === 'bucket',
       held: this.held,
       portrait: this.portrait,
+      perf: this.showPerf ? this.perf : null,
     };
     if (this.started) drawHud(g, this.fonts, state);
   }

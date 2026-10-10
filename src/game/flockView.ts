@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { Sheep } from '../art/sheep';
 import { C } from '../engine/palette';
+import { SheepInstancer, type SheepPose } from './sheepInstancer';
 import { SheepState, type FlockOutputs } from '../sim/contract';
 import { hash1 } from '../engine/rng';
 
@@ -14,7 +14,7 @@ function lerpAngle(a: number, b: number, t: number): number {
 }
 
 interface Anim {
-  sheep: Sheep;
+  pose: SheepPose;
   speed: number;
   graze: number;
   look: number;
@@ -25,7 +25,8 @@ interface Anim {
 
 /**
  * Draws the flock: one animated cartoon sheep per simulated sheep, interpolated between the
- * 30 Hz simulation steps and animated from the coarse state the model reports.
+ * 30 Hz simulation steps and animated from the coarse state the model reports. All of them
+ * are drawn by one instancer, a few draw calls for the whole flock.
  */
 export class FlockView {
   readonly root = new THREE.Group();
@@ -36,18 +37,21 @@ export class FlockView {
   /** sheep that bleated this frame, for the audio */
   readonly bleats: number[] = [];
 
+  private readonly instancer: SheepInstancer;
+
   constructor(count: number, seed: number) {
+    const wool: THREE.Color[] = [];
+    const face: THREE.Color[] = [];
     for (let i = 0; i < count; i++) {
       // mostly white, a few creams and one black sheep
       const r = hash1(i, seed);
-      const wool = i === 7 ? C.coal : r < 0.15 ? C.straw : r < 0.3 ? C.mist : C.white;
-      const face = i === 7 ? C.black : r > 0.85 ? C.mauve : C.ink;
-      const sheep = new Sheep(seed * 100 + i, wool, face);
-      sheep.root.scale.setScalar(0.92 + hash1(i, seed + 1) * 0.16);
-      this.root.add(sheep.root);
-      this.anims.push({ sheep, speed: 0, graze: 0, look: 0, blinkAt: hash1(i, 3) * 4, bleatAt: 5 + hash1(i, 4) * 40, bleatUntil: 0 });
+      wool.push(new THREE.Color(i === 7 ? C.coal : r < 0.15 ? C.straw : r < 0.3 ? C.mist : C.white));
+      face.push(new THREE.Color(i === 7 ? C.black : r > 0.85 ? C.mauve : C.ink));
+      const pose: SheepPose = { x: 0, z: 0, rotY: 0, scale: 0.92 + hash1(i, seed + 1) * 0.16, walkPhase: 0, walk: 0, graze: 0, bleat: 0, blink: 0, lookYaw: 0, bounce: 0 };
+      this.anims.push({ pose, speed: 0, graze: 0, look: 0, blinkAt: hash1(i, 3) * 4, bleatAt: 5 + hash1(i, 4) * 40, bleatUntil: 0 });
     }
-    sheepShadows(this.root);
+    this.instancer = new SheepInstancer(wool, face, 4, seed);
+    this.root.add(this.instancer.root);
   }
 
   /** Call before each simulation step so frames can interpolate across it. */
@@ -70,14 +74,15 @@ export class FlockView {
     this.bleats.length = 0;
     for (let i = 0; i < this.anims.length; i++) {
       const a = this.anims[i];
-      const s = a.sheep;
+      const s = a.pose;
       const has = this.prevX.length === o.count;
       const x = has ? this.prevX[i] + (o.x[i] - this.prevX[i]) * alpha : o.x[i];
       const z = has ? this.prevY[i] + (o.y[i] - this.prevY[i]) * alpha : o.y[i];
       const h = has ? lerpAngle(this.prevH[i], o.heading[i], alpha) : o.heading[i];
-      s.root.position.set(x, 0, z);
+      s.x = x;
+      s.z = z;
       // the model faces +Z; heading is atan2(dz, dx)
-      s.root.rotation.y = Math.PI / 2 - h;
+      s.rotY = Math.PI / 2 - h;
 
       const state = o.state[i];
       a.speed += (o.speed[i] - a.speed) * (1 - Math.exp(-dt * 10));
@@ -93,7 +98,7 @@ export class FlockView {
       // alert sheep stare at the general
       let look = 0;
       if (state === SheepState.Alert) {
-        const want = Math.atan2(watch.x - x, watch.z - z) - s.root.rotation.y;
+        const want = Math.atan2(watch.x - x, watch.z - z) - s.rotY;
         look = Math.max(-1.1, Math.min(1.1, Math.atan2(Math.sin(want), Math.cos(want))));
       }
       a.look += (look - a.look) * (1 - Math.exp(-dt * 6));
@@ -112,20 +117,13 @@ export class FlockView {
       }
       const b = a.bleatUntil - time;
       s.bleat = b > 0 ? Math.sin((1 - b / 0.55) * Math.PI) : 0;
-      s.update();
+      this.instancer.pose(i, s);
     }
+    this.instancer.commit();
   }
 
   position(i: number, out = new THREE.Vector3()): THREE.Vector3 {
-    return out.copy(this.anims[i].sheep.root.position);
+    const p = this.anims[i].pose;
+    return out.set(p.x, 0, p.z);
   }
-}
-
-function sheepShadows(root: THREE.Object3D): void {
-  root.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh && !o.layers.isEnabled(1)) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-    }
-  });
 }

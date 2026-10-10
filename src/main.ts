@@ -248,8 +248,13 @@ function startGame(fonts: Fonts, ctx: AudioContext | null): void {
   }
   let last = performance.now();
   const loop = (now: number) => {
-    game.frame((now - last) / 1000);
+    const dt = (now - last) / 1000;
     last = now;
+    // smoothed frame rate, and the time the frame takes on the main thread
+    if (dt > 0) game.perf.fps += (1 / dt - game.perf.fps) * 0.05;
+    const t0 = performance.now();
+    game.frame(dt);
+    game.perf.ms += (performance.now() - t0 - game.perf.ms) * 0.05;
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);

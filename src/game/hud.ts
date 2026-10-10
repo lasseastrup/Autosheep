@@ -7,7 +7,7 @@ export const W = 640;
 export const H = 360;
 
 /** Things on screen that can be clicked or tapped. Each one does what a key does. */
-export type ButtonId = 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger';
+export type ButtonId = 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'perf';
 export interface Button {
   id: ButtonId;
   x: number;
@@ -19,6 +19,8 @@ export interface Button {
 /** Layout of the clickable parts of the HUD; drawing and hit-testing both use it. */
 export function hudButtons(touch: boolean, wonAge: number | null): Button[] {
   const b: Button[] = [
+    // the objective panel toggles the frame-rate readout
+    { id: 'perf', x: 6, y: 6, w: 150, h: 46 },
     // the gate and honk rows of the top-right panel work for everyone
     { id: 'gate', x: W - 96, y: 6, w: 90, h: 15 },
     { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 },
@@ -73,6 +75,8 @@ export interface HudState {
   held: ReadonlySet<ButtonId>;
   /** a phone held upright: suggest turning it */
   portrait: boolean;
+  /** frame-rate readout, when switched on */
+  perf: { fps: number; ms: number; calls: number; tris: number } | null;
 }
 
 const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -85,6 +89,12 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   f.title.draw(g, `${s.penned}/${s.total}`, 42, 20, { color: s.penned === s.total ? C.lime : C.white, shadow: C.black });
   f.small.draw(g, 'PENNED', 104, 26, { color: C.fog });
   f.small.draw(g, mmss(s.time), 104, 38, { color: C.mist });
+  if (s.perf) {
+    const p = s.perf;
+    const text = `${Math.round(p.fps)} FPS  ${p.ms.toFixed(1)} MS  ${p.calls} CALLS  ${Math.round(p.tris / 1000)}K TRIS`;
+    rect(g, 6, 54, f.small.measure(text) + 8, 12, C.black);
+    f.small.draw(g, text, 10, 56, { color: p.fps >= 55 ? C.lime : p.fps >= 40 ? C.gold : C.scarlet });
+  }
 
   // --- gate and megaphone
   panel(g, W - 96, 6, 90, 34, { fill: C.ink, border: C.mist });
