@@ -101,8 +101,9 @@ export class Game {
   /** called once a frame has been drawn (for tooling) */
   onFrame: (() => void) | null = null;
 
-  constructor(canvas: HTMLCanvasElement, private readonly fonts: Fonts) {
-    this.pr = new PixelRenderer(canvas, W, H);
+  /** @param target  a canvas, or the renderer of the menu this game is prepared behind */
+  constructor(target: HTMLCanvasElement | THREE.WebGLRenderer, private readonly fonts: Fonts) {
+    this.pr = new PixelRenderer(target, W, H);
     this.pr.setPalette(RESURRECT64);
     this.pr.post = { ...this.pr.post, depthAbs: 0.25, depthRel: 0, outline: 0.62, highlight: 0.3, bloom: 1.0, bloomThreshold: 1.3 };
     setToonDefaults();
@@ -467,7 +468,8 @@ export class Game {
     let bubble: HudState['bubble'] = null;
     if (gp.line && this.time >= gp.lineFrom && this.time < gp.lineUntil) {
       const sp = this.cam.toScreen(gp.pos.clone().setY(2.6));
-      bubble = { text: gp.line, x: sp.x, y: sp.y };
+      const feet = this.cam.toScreen(gp.pos.clone().setY(0));
+      bubble = { text: gp.line, x: sp.x, y: sp.y, under: feet.y };
     }
     // pen pointer when the pen is off screen
     let penArrow: HudState['penArrow'] = null;

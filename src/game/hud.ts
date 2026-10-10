@@ -65,7 +65,8 @@ export interface HudState {
   playing: number;
   showHelp: boolean;
   /** Gafoop's speech, already placed on screen */
-  bubble: { text: string; x: number; y: number } | null;
+  /** above his head at y, or (with no room above) under his feet at `under` */
+  bubble: { text: string; x: number; y: number; under: number } | null;
   /** where the pen is, if it is off screen */
   penArrow: { x: number; y: number; angle: number } | null;
   floaters: { text: string; x: number; y: number; age: number }[];
@@ -169,7 +170,7 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   g.globalAlpha = 1;
 
   // --- speech bubble
-  if (s.bubble && !s.won) bubble(g, f, s.bubble.text, s.bubble.x, s.bubble.y);
+  if (s.bubble && !s.won) bubble(g, f, s.bubble.text, s.bubble.x, s.bubble.y, s.bubble.under);
 
   // --- touch controls
   if (s.touch && !s.won) touchControls(g, f, s);
@@ -219,16 +220,20 @@ function touchControls(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void
   }
 }
 
-function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, y: number): void {
+function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, y: number, under: number): void {
   const lines = f.body.wrap(text, 190);
   const w = Math.max(...lines.map((l) => f.body.measure(l))) + 12;
   const h = lines.length * 14 + 6;
   const bx = Math.round(Math.max(4, Math.min(W - w - 4, x - w / 2)));
-  const by = Math.round(Math.max(56, y - h - 10));
+  // above his head, unless that would run into the objective panel: then under his feet,
+  // rather than pushed down on top of him
+  const above = y - h - 10;
+  const flip = above < 56;
+  const by = Math.round(flip ? Math.min(H - h - 4, under + 10) : above);
   panel(g, bx, by, w, h, { fill: C.white, border: C.black, shadow: C.ink });
-  // tail
+  // tail, pointing at him
   const tx = Math.round(Math.max(bx + 6, Math.min(bx + w - 8, x)));
-  for (let i = 0; i < 5; i++) rect(g, tx - (4 - i), by + h - 1 + i, (4 - i) * 2 - 1 > 0 ? (4 - i) * 2 - 1 : 1, 1, i === 4 ? C.black : C.white);
+  for (let i = 0; i < 5; i++) rect(g, tx - (4 - i), flip ? by - i : by + h - 1 + i, (4 - i) * 2 - 1 > 0 ? (4 - i) * 2 - 1 : 1, 1, i === 4 ? C.black : C.white);
   lines.forEach((l, i) => f.body.draw(g, l, bx + 6, by + 3 + i * 14, { color: C.ink }));
 }
 

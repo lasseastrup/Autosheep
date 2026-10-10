@@ -43,8 +43,10 @@ up, a loading panel lists them, so a frozen screen shows the step that froze it 
 line). Behind the menu, the remaining steps (voices, shader compiles, building the game) are
 shown in a status line in the bottom-left corner, and if a button has to wait for one, its
 LOADING box names it. `L` (or tapping the status line) opens the loading log: every step with
-its time, and every frame over 100 ms with the steps that were running during it. The same
-lines go to the browser console, prefixed `[autosheep]`.
+its time, and every frame over 100 ms with the steps that were running during it. Errors, a
+WebGL context the browser takes away, and audio that will not start show as a red line in the
+same corner (tap it for the log). The same lines go to the browser console, prefixed
+`[autosheep]`.
 
 | Command | What it does |
 |---|---|

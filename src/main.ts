@@ -31,6 +31,15 @@ const stage = document.getElementById('stage') as HTMLDivElement;
 const hint = document.getElementById('hint') as HTMLDivElement;
 
 let player!: IntroPlayer;
+let introFit: (() => void) | null = null;
+
+/** Errors, a lost WebGL context: on screen as well as in the console (see loading.ts). */
+function reportProblems(): void {
+  window.addEventListener('error', (e) => loader.problem(`error: ${e.message}`));
+  window.addEventListener('unhandledrejection', (e) => loader.problem(`error: ${e.reason instanceof Error ? e.reason.message : String(e.reason)}`));
+  canvas.addEventListener('webglcontextlost', () => loader.problem('the browser took the graphics away (WebGL context lost)'));
+  canvas.addEventListener('webglcontextrestored', () => loader.problem('the graphics came back (WebGL context restored)'));
+}
 
 function fitTo(resize: (w: number, h: number, dpr: number, fixed?: number) => void, gutterPx = 32): () => void {
   return () => {
@@ -56,6 +65,7 @@ async function boot(): Promise<void> {
   // every slow piece of start-up is a named step on a loading screen (L shows the log)
   if (params.has('capture')) loader.disable();
   else loader.boot();
+  reportProblems();
   const step = loader.step.bind(loader);
   if (params.has('game')) {
     const fonts = await step('fonts', () => loadFonts());
@@ -66,9 +76,9 @@ async function boot(): Promise<void> {
   player = await step('starting the renderer', () => new IntroPlayer(canvas));
   if (params.has('nosubs')) player.subtitles = false;
   await player.init(step);
-  const fit = fitTo((w, h, d, f) => player.pr.resize(w, h, d, f));
-  fit();
-  window.addEventListener('resize', fit);
+  introFit = fitTo((w, h, d, f) => player.pr.resize(w, h, d, f));
+  introFit();
+  window.addEventListener('resize', introFit);
 
   if (params.has('capture')) {
     exposeCaptureApi();
@@ -281,22 +291,22 @@ const endPrompt = (t: number) => (g: CanvasRenderingContext2D) => {
 };
 
 /** The game, built and warmed on a hidden canvas so that switching to it is instant. */
-let preparing: Promise<{ game: Game; canvas: HTMLCanvasElement }> | null = null;
-function prepareGame(fonts: Fonts): Promise<{ game: Game; canvas: HTMLCanvasElement }> {
+let preparing: Promise<Game> | null = null;
+function prepareGame(fonts: Fonts): Promise<Game> {
   preparing ??= (async () => {
-    const gc = document.createElement('canvas');
-    gc.style.cursor = 'none';
-    gc.style.display = 'none';
-    stage.appendChild(gc);
+    // Behind the menu the game is built on the menu's own WebGL renderer and draws nothing to
+    // the screen; starting it just hands it the canvas. (It used to have a hidden canvas and a
+    // WebGL context of its own, which phones can take away while it waits.)
     const game = await loader.step('game: building the level', () => {
-      const g = new Game(gc, fonts);
-      fitGame(g)();
+      const g = new Game(player ? player.pr.renderer : canvas, fonts);
+      if (player) g.pr.offscreen = true;
+      else fitGame(g)();
       return g;
     });
     await loader.step('game: compiling shaders', () => game.warm());
     // one real frame compiles what warm() cannot reach (shadow depth, post-processing)
     await loader.step('game: first frame', () => game.frame(0));
-    return { game, canvas: gc };
+    return game;
   })();
   return preparing;
 }
@@ -313,25 +323,39 @@ function fitGame(game: Game): () => void {
  * happened yet; `ready` is called just before the intro's canvas goes away.
  */
 async function startGame(fonts: Fonts, ctx: AudioContext | null, ready?: () => void): Promise<void> {
-  const { game, canvas: gc } = await prepareGame(fonts);
+  const game = await prepareGame(fonts);
   ready?.();
+  // the intro's loops have stopped; the game takes over its canvas
   if (player) {
-    player.pr.renderer.dispose();
-    player.pr.renderer.forceContextLoss();
+    if (introFit) window.removeEventListener('resize', introFit);
+    player.dispose();
   }
-  canvas.remove();
-  gc.style.display = '';
+  game.pr.offscreen = false;
+  canvas.style.cursor = 'none';
+  document.body.dataset.scene = 'game';
   const fit = fitGame(game);
   fit();
   window.addEventListener('resize', fit);
   hint.textContent = '';
-  wireInput(game, gc);
+  wireInput(game, canvas);
 
-  const begin = async (c: AudioContext) => {
-    await c.resume();
+  // The game starts on the tap; the sound joins when the audio is running. (Waiting for it
+  // first left the game frozen on its first frame where resuming the audio never finished.)
+  const begin = (c: AudioContext) => {
     game.begin(new GameAudio(c));
+    if (c.state !== 'running') {
+      void loader.step('audio: starting', () => new Promise<void>((resolve) => {
+        const check = () => {
+          if (c.state !== 'running') return;
+          c.removeEventListener('statechange', check);
+          resolve();
+        };
+        c.addEventListener('statechange', check);
+        check();
+      }));
+    }
   };
-  if (ctx) void begin(ctx);
+  if (ctx) begin(ctx);
   else {
     // the first click starts the audio and the clock
     const first = () => {
@@ -339,7 +363,7 @@ async function startGame(fonts: Fonts, ctx: AudioContext | null, ready?: () => v
       window.removeEventListener('keydown', first);
       const c = audioContext();
       void c.resume();
-      void begin(c);
+      begin(c);
     };
     window.addEventListener('pointerdown', first);
     window.addEventListener('keydown', first);
@@ -350,21 +374,26 @@ async function startGame(fonts: Fonts, ctx: AudioContext | null, ready?: () => v
       game,
       tick: (n: number, dt = 1 / 60, draw = true) => { for (let i = 0; i < n; i++) game.frame(dt, draw && i === n - 1); },
       begin: () => game.begin(null),
-      grab: () => gc.toDataURL('image/png'),
+      grab: () => canvas.toDataURL('image/png'),
     };
     game.frame(0);
     return;
   }
   let last = performance.now();
   const loop = (now: number) => {
+    // asked for first, so an error in one frame cannot stop the game
+    requestAnimationFrame(loop);
     const dt = (now - last) / 1000;
     last = now;
     // smoothed frame rate, and the time the frame takes on the main thread
     if (dt > 0) game.perf.fps += (1 / dt - game.perf.fps) * 0.05;
     const t0 = performance.now();
-    game.frame(dt);
+    try {
+      game.frame(dt);
+    } catch (e) {
+      loader.problem(`error in a frame: ${e instanceof Error ? e.message : String(e)}`);
+    }
     game.perf.ms += (performance.now() - t0 - game.perf.ms) * 0.05;
-    requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
 }

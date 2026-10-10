@@ -15,6 +15,12 @@ export interface StepRecord {
   error?: string;
 }
 
+export interface Problem {
+  at: number;
+  text: string;
+  count: number;
+}
+
 export interface Stall {
   at: number;
   ms: number;
@@ -29,11 +35,14 @@ export function afterPaint(): Promise<void> {
   return new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 }
 
+const esc = (t: string) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
 const fmt = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`);
 
 class Loader {
   readonly steps: StepRecord[] = [];
   readonly stalls: Stall[] = [];
+  /** errors and other trouble (a lost WebGL context, audio that will not start) */
+  readonly problems: Problem[] = [];
   private root: HTMLDivElement | null = null;
   /** the panel inside the root; it is the scroll container, so it stays and only its contents change */
   private panel: HTMLDivElement | null = null;
@@ -90,6 +99,18 @@ class Loader {
       if (!this.running().length) this.doneAt = performance.now();
       this.render();
     }
+  }
+
+  /**
+   * Something went wrong that the player should be able to report: it goes in the log and
+   * the console, and a red line stays in the corner (tap it, or L, for the log).
+   */
+  problem(text: string): void {
+    const same = this.problems.find((p) => p.text === text);
+    if (same) same.count++;
+    else this.problems.push({ at: performance.now(), text, count: 1 });
+    if (!same) console.warn(`[autosheep] problem: ${text}`);
+    this.render();
   }
 
   running(): StepRecord[] {
@@ -198,6 +219,9 @@ class Loader {
       const loadStalls = this.stalls.filter((s) => s.during !== null);
       const playStalls = this.stalls.filter((s) => s.during === null);
       let stalls = '';
+      if ((log || this.mode === 'boot') && this.problems.length) {
+        stalls += `<div class="hint">PROBLEMS</div>` + this.problems.map((p) => `<div class="row err"><span>${esc(p.text)}${p.count > 1 ? ` (×${p.count})` : ''}</span><span>${fmt(p.at)}</span></div>`).join('');
+      }
       if (log && loadStalls.length) stalls += `<div class="hint">STALLS DURING LOADING (FRAMES OVER ${STALL_MS} MS)</div>` + loadStalls.map(stallRow).join('');
       if (log && playStalls.length) {
         stalls += `<div class="hint">STALLS WHILE PLAYING: ${playStalls.length}, THE LATEST:</div>` + playStalls.slice(-5).map(stallRow).join('');
@@ -210,7 +234,12 @@ class Loader {
       return `<h1>${title}</h1>${list.map(row).join('')}${stalls}<div class="hint">${hint}</div>`;
     }
     if (this.mode === 'hidden') return '';
-    // status line: what is still being prepared, then a few seconds of "ready"
+    // status line: trouble first, then what is still being prepared, then a few seconds of
+    // "ready"
+    if (this.problems.length) {
+      const last = this.problems[this.problems.length - 1];
+      return `<div class="err">problem: ${esc(last.text)}${this.problems.length > 1 ? ` (+${this.problems.length - 1} more)` : ''} · tap for the log</div>`;
+    }
     if (running.length) return `<div class="run">preparing: ${running.map((s) => s.name).join(' · ')}</div>`;
     if (now - this.doneAt < 5000 && this.steps.length) {
       setTimeout(() => this.render(), 5000 - (now - this.doneAt) + 20);

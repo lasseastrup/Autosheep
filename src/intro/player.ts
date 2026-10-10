@@ -63,6 +63,21 @@ export class IntroPlayer {
   }
 
   /**
+   * Free the intro's GPU memory when the game takes over its canvas: the pipeline's targets
+   * and the sets' geometry. Materials stay: the toon ones are shared with the game, and
+   * dropping a shared shader would mean compiling it again.
+   */
+  dispose(): void {
+    this.pr.dispose();
+    const seen = new Set<THREE.Object3D>();
+    for (const set of Object.values(this.sets)) {
+      if (!set.scene || seen.has(set.scene)) continue;
+      seen.add(set.scene);
+      set.scene.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    }
+  }
+
+  /**
    * Compile every set's shaders ahead of time (behind the start screen), one set per animation
    * frame so the screen keeps moving, instead of stalling at each new shot.
    */

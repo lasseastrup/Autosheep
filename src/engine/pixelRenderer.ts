@@ -406,6 +406,13 @@ export class PixelRenderer {
   snapOrtho = true;
   /** Leave passes out, to measure what they cost (the perf test). */
   readonly skip = { outline: false, shadows: false };
+  /** Render everything but leave the canvas alone (preparing behind another pipeline). */
+  offscreen = false;
+  /** a lost WebGL context loses the table's contents; three restores the rest itself */
+  private lutLost = false;
+  private readonly onRestored = () => {
+    this.lutLost = true;
+  };
 
   readonly overlayCanvas: HTMLCanvasElement;
   readonly overlay: CanvasRenderingContext2D;
@@ -431,12 +438,19 @@ export class PixelRenderer {
   private subpixel = new THREE.Vector2();
   private ditherOffset = new THREE.Vector2();
 
-  constructor(canvas: HTMLCanvasElement, width = 480, height = 270) {
+  /**
+   * @param target  a canvas to create the WebGL renderer on, or a renderer to share: two
+   *                pipelines on one WebGL context (the menu and the game prepared behind it)
+   *                cost one context's memory, and the second can take over the same canvas
+   */
+  constructor(target: HTMLCanvasElement | THREE.WebGLRenderer, width = 480, height = 270) {
     this.width = width;
     this.height = height;
     this.padW = width + MARGIN * 2;
     this.padH = height + MARGIN * 2;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: PixelRenderer.keepFrames, powerPreference: 'high-performance' });
+    this.renderer = target instanceof THREE.WebGLRenderer
+      ? target
+      : new THREE.WebGLRenderer({ canvas: target, antialias: false, alpha: false, preserveDrawingBuffer: PixelRenderer.keepFrames, powerPreference: 'high-performance' });
     // checking each shader for errors on first use blocks until the driver has compiled it;
     // worth it while developing, a needless stall in a release build
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
@@ -522,6 +536,7 @@ export class PixelRenderer {
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.screenMat);
     this.quad.frustumCulled = false;
     this.quadScene.add(this.quad);
+    this.renderer.domElement.addEventListener('webglcontextrestored', this.onRestored);
   }
 
   setPalette(hexes: string[]): void {
@@ -537,7 +552,7 @@ export class PixelRenderer {
     // the table of nearest colours, worked out once per palette on the GPU
     u.uPaletteSize.value = hexes.length;
     this.lutMat.uniforms.uPaletteSize.value = hexes.length;
-    this.blit(this.lutMat, this.lutRT);
+    this.buildLut();
     this.hasPalette = true;
   }
 
@@ -680,9 +695,25 @@ export class PixelRenderer {
     u.uSaturation.value = p.saturation;
     u.uUseOutlineColor.value = p.outlineColor ? 1 : 0;
     if (p.outlineColor) (u.uOutlineColor.value as THREE.Color).copy(p.outlineColor);
+    if (this.lutLost) this.buildLut();
     this.blit(this.pixelMat, this.pixelRT);
 
-    this.present();
+    if (!this.offscreen) this.present();
+  }
+
+  /** The palette table, rendered once per palette (and again if the context was lost). */
+  private buildLut(): void {
+    this.blit(this.lutMat, this.lutRT);
+    this.lutLost = false;
+  }
+
+  /** Free this pipeline's targets and materials (not the renderer, which may be shared). */
+  dispose(): void {
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onRestored);
+    for (const rt of [this.colorRT, this.normalRT, this.brightRT, this.blurRT, this.pixelRT, this.lutRT]) rt.dispose();
+    for (const m of [this.normalMat, this.brightMat, this.blurMat, this.pixelMat, this.screenMat, this.lutMat]) m.dispose();
+    this.overlayTex.dispose();
+    this.quad.geometry.dispose();
   }
 
   /**
