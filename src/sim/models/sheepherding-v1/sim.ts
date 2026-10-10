@@ -115,7 +115,7 @@ export class Sim {
         }
         this.threats.push(t);
       } else if (s.kind === 'lure') {
-        this.lures.push({ x: s.x, y: s.y, strength: s.strength, radius: s.radius });
+        this.lures.push({ x: s.x, y: s.y, strength: s.strength, radius: s.radius, appetite: s.appetite });
       } else if (s.kind === 'flow') {
         if (s.path && s.path.length >= 2) this.flows.push(s);
       } else if (s.kind === 'chute') {

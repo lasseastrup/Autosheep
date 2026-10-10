@@ -33,32 +33,43 @@ The start screen offers the intro or the game; during the intro `Esc` (or the co
 skips straight to the game and `S` toggles subtitles. Development query flags: `?game` opens the game directly, `?t=95` starts
 the intro at 95 s, `?nosubs` hides subtitles, `?scale=3` forces the upscale factor.
 
-**Playing.** Gafoop hovers after the mouse, and sheep keep away from him by proximity alone:
-come in slowly to walk them, fast to make them run. Hold a mouse button to rattle a feed bucket
-(sheep follow it and forgive him being close), `Space` honks the megaphone (everything nearby
-bolts), `G` opens and shuts the pen gate, `Q`/`E` rotate the view, the wheel zooms and `WASD`
-pans. Pen all 30 sheep and shut the gate to pass the audit. Sheep moved too hard jam in the
-gateway; ease off, or bring the bucket.
+**Playing: The Valley.** One persistent valley that saves itself (in the browser) and carries
+on where you left it. The Galactic Bureau sends Forms, one at a time, on the clipboard in the
+top-left corner; each arrives with a supply drop and is stamped APPROVED when done:
 
-**Building** (level 2, "Form 12-C"): `B` opens build mode, `1`–`9` pick a tool (race, flap, rack,
-salt lick, chimes, shearing shed, spindle hut, hurdle, remove), a click places it, `R` turns
-it. Races are drawn point by point and join up when they end on a station door, a pasture gap
-or another race (`Enter` or right-click also finishes one, `Esc` cancels). Sheep walk a race the
-way it was drawn; a flap lets them through one way only. `O` shows the flow overlay (which way
-sheep have been moving, and what each station is doing), `T` runs time at ×2 or ×4. On a
-phone, BUILD and FLOW are under the top-right panel; tap to place, drag to pan.
+1. **8-A Pen the flock.** A pen arrives. Gafoop is harmless: the sheep ignore him, but they
+   follow the feed bucket (hold a mouse button, or FEED). Lead them in and shut the gate (`G`
+   near it).
+2. **10-B Ten fleeces.** Shears: hold `X` (SHEAR) beside a woolly sheep that is standing still.
+3. **12-C Twenty skeins.** Spin fleece by hand (hold `C`, SPIN), or use the shearing shed and
+   spindle hut the Bureau drops: fence a paddock either side of them and the flock grazes one
+   down, goes through the shed (shorn) to fresh grass, grazes that, and comes back through the
+   spindle hut (spun). Wool only grows back on a fed sheep.
+4. **27-B Coercive apparatus.** The Woof-Woof 3000: hold `Space` (WOOF) and Gafoop is a dog;
+   sheep move away from him, faster the faster he comes. Woof twenty through a gate. Frightened
+   sheep grow less wool for a while.
+5. **31-A Industry unsupervised.** Twelve skeins with nobody herding; timed and grass gates help.
+
+Grass is eaten and grows back over minutes; a grazed field is visibly short, then bare earth.
+`T` runs time at ×2 or ×4, `Q`/`E` rotate the view, the wheel zooms and `WASD` pans.
+
+**Building** (after Form 8-A): `B` opens build mode, `1`–`6` pick a tool (hurdle, gate, trough,
+shearing shed, spindle hut, remove; tools arrive with the Forms), a click places it, `R` turns
+it (for a gate: which kind, hand, timed or grass, once unlocked). Hurdles and gates are two
+clicks, end to end; their ends snap onto the ends of fences nearby. A trough calls the flock
+while it has feed; fill it by holding the bucket over it. `O` shows the flow overlay.
 
 **On a phone** (landscape is best), drag to fly; on-screen buttons appear after the first touch:
-FEED (hold, while flying with the other thumb), HONK, GATE, and turn and zoom. The gate and honk
-rows of the top-right panel and the buttons on the verdict card can also be clicked with a mouse.
-`F` (or clicking the objective panel) shows the frame rate, main-thread time and draw calls,
+FEED (hold, while flying with the other thumb), and WOOF, GATE, SHEAR and SPIN when they can be
+used, plus turn and zoom. BUILD and FLOW are under the top-right panel; tap to place, drag to
+pan. `F` (or tapping the clipboard) shows the frame rate, main-thread time and draw calls,
 and under it a RUN PERF TEST button (or `P`): for half a minute the game turns the expensive
 parts of a frame off one at a time (shadow pass, outline pass, bloom, palette, HUD, grass,
 full-resolution upscale, then all of them, then drawing nothing) and shows the frame rate of
 each with the device and GPU, so one screenshot from a slow device says where its time goes.
-Beside it are two cheats. SKIP LEVEL (or `]`) goes straight on to the next level, won or not,
-and from the last level round to the first. On a herdway level, SOLVE (or `\`) takes down
-whatever has been built and puts up a layout that wins the level (a test checks that it does).
+Beside it are the cheats: SKIP FORM (or `]`) stamps the current Form (press again for the next
+one), SOLVE (or `\`) does what the Form asks or builds its reference setup (the paddocks round
+the shed and spindle hut; a test checks that it keeps making yarn), and NEW VALLEY starts again.
 
 **If something stalls.** Every slow piece of start-up is a named loading step. Until the menu is
 up, a loading panel lists them, so a frozen screen shows the step that froze it (the yellow
@@ -73,7 +84,7 @@ same corner (tap it for the log). The same lines go to the browser console, pref
 | Command | What it does |
 |---|---|
 | `npm run build` | Typecheck and build to `dist/` |
-| `?game&level=2` | Open straight onto level 2 (dev) |
+| `?game&fresh` | Open straight onto a new valley, forgetting the saved one (dev) |
 | `npm run artifact` | One self-contained HTML file (code, fonts and voice inlined) in `out/artifact/` |
 | `npm run frames -- <dir> 12.5 40 …` | Render specific intro frames to PNG (`shots` = one per shot) |
 | `npm run movie -- --workers 2` | Render the whole intro to `out/movie/autosheep-intro.mp4` (headless Chromium + ffmpeg, resumable) |

@@ -14,6 +14,8 @@ export class Obstacles {
   solid = new Uint8Array(0);
   /** Autosheep: flaps, passable along (passX, passY) only */
   oneWay = new Uint8Array(0);
+  /** Autosheep: station doors, which grazing looks through */
+  door = new Uint8Array(0);
   passX = new Float32Array(0);
   passY = new Float32Array(0);
   count = 0;
@@ -41,12 +43,14 @@ export class Obstacles {
     this.radius = new Float32Array(n);
     this.solid = new Uint8Array(n);
     this.oneWay = new Uint8Array(n);
+    this.door = new Uint8Array(n);
     this.passX = new Float32Array(n);
     this.passY = new Float32Array(n);
     list.forEach((o, k) => {
       this.ax[k] = o.ax; this.ay[k] = o.ay; this.bx[k] = o.bx; this.by[k] = o.by;
       this.radius[k] = o.radius;
       this.solid[k] = o.solid ? 1 : 0;
+      this.door[k] = o.door ? 1 : 0;
       if (o.oneWay) {
         this.oneWay[k] = 1;
         this.passX[k] = o.oneWay.dx;
@@ -126,10 +130,13 @@ export class Obstacles {
     return false;
   }
 
-  /** Does any fence cut the line from (x0, y0) to (x1, y1), however long? */
-  crossesAny(x0: number, y0: number, x1: number, y1: number): boolean {
+  /**
+   * Does any fence cut the line from (x0, y0) to (x1, y1), however long? With `throughDoors`,
+   * station doors do not count (a hungry sheep's idea of where the grass is).
+   */
+  crossesAny(x0: number, y0: number, x1: number, y1: number, throughDoors = false): boolean {
     for (let k = 0; k < this.count; k++) {
-      if (this.oneWay[k]) continue;
+      if (this.oneWay[k] || (throughDoors && this.door[k])) continue;
       if (segmentsCross(x0, y0, x1, y1, this.ax[k], this.ay[k], this.bx[k], this.by[k])) return true;
     }
     return false;

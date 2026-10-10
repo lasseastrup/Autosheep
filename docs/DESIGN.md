@@ -818,9 +818,9 @@ on into M2b.
    included, is a device in the works.
 3. **Bureau Forms** instead of levels, on a clipboard: each asks for something and brings a
    supply drop. 8-A *pen the flock* (the pen is delivered; lead them in with the bucket), 10-B
-   *ten fleeces* (shears), 12-C *thirty skeins* (hand spindle; the shed and spindle hut are
-   delivered), 27-B *coercive apparatus* (the Woof-Woof), 31-A *industry without supervision*
-   (timed and grass gates; yarn made with nobody herding). Cheats: SKIP completes the current
+   *ten fleeces* (shears), 12-C *twenty skeins* (hand spindle; the shed and spindle hut are
+   delivered), 27-B *coercive apparatus* (the Woof-Woof; twenty sheep woofed through a gate),
+   31-A *industry unsupervised* (timed and grass gates; twelve skeins made with nobody herding). Cheats: SKIP completes the current
    Form, SOLVE builds its reference setup.
 4. **Harmless Gafoop**: no threat and no honk until the Woof-Woof, which then works like the old
    proximity threat with a bark on top.

@@ -8,15 +8,18 @@ export const H = 360;
 
 /** Things on screen that can be clicked or tapped. Each one does what a key does. */
 /** Build tools (herdway levels). */
-export const TOOLS = ['lane', 'flap', 'rack', 'lick', 'chimes', 'shed', 'spindle', 'hurdle', 'remove'] as const;
-export type ToolId = (typeof TOOLS)[number];
+export const ALL_TOOLS = ['hurdle', 'gate', 'trough', 'shed', 'spindle', 'lane', 'flap', 'rack', 'lick', 'chimes', 'remove'] as const;
+export type ToolId = (typeof ALL_TOOLS)[number];
+/** The toolbar (M2b): races, flaps, racks, licks and chimes are set aside, still in the code. */
+export const TOOLS: readonly ToolId[] = ['hurdle', 'gate', 'trough', 'shed', 'spindle', 'remove'];
 export const TOOL_LABEL: Record<ToolId, string> = {
-  lane: 'RACE', flap: 'FLAP', rack: 'RACK', lick: 'LICK', chimes: 'CHIMES', shed: 'SHED', spindle: 'SPINDLE', hurdle: 'HURDLE', remove: 'REMOVE',
+  hurdle: 'HURDLE', gate: 'GATE', trough: 'TROUGH', shed: 'SHED', spindle: 'SPINDLE', remove: 'REMOVE',
+  lane: 'RACE', flap: 'FLAP', rack: 'RACK', lick: 'LICK', chimes: 'CHIMES',
 };
 
 export type ButtonId =
-  | 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'next' | 'keep' | 'perf' | 'perfTest'
-  | 'skip' | 'solve' | 'speed' | 'build' | 'flow' | 'finish' | 'cancel' | 'rotate' | `tool:${ToolId}`;
+  | 'gate' | 'woof' | 'feed' | 'shear' | 'spin' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'next' | 'keep' | 'perf' | 'perfTest'
+  | 'skip' | 'solve' | 'reset' | 'speed' | 'build' | 'flow' | 'finish' | 'cancel' | 'rotate' | `tool:${ToolId}`;
 export interface Button {
   id: ButtonId;
   x: number;
@@ -28,12 +31,15 @@ export interface Button {
 /** What the HUD's layout depends on. */
 export interface HudLayout {
   touch: boolean;
-  /** the verdict card, once its buttons are up */
+  /** the approval card, once its buttons are up */
   won: { age: number; buttons: ButtonId[] } | null;
   perf: boolean;
-  kind: 'pen' | 'herdway';
-  /** build mode: the tool in hand, and whether a race is half drawn */
-  build: { tool: ToolId; drawing: boolean } | null;
+  /** what Gafoop can do just now: each brings its button */
+  can: { build: boolean; woof: boolean; gate: boolean; shear: boolean; spin: boolean; solve: boolean };
+  /** the toolbar: the tools unlocked so far */
+  tools: readonly ToolId[];
+  /** build mode: the tool in hand, whether a fence is half drawn, whether it turns */
+  build: { tool: ToolId; drawing: boolean; turns: boolean } | null;
 }
 
 /** Layout of the clickable parts of the HUD; drawing and hit-testing both use it. */
@@ -42,20 +48,15 @@ export function hudButtons(L: HudLayout): Button[] {
     // the objective panel toggles the frame-rate readout
     { id: 'perf', x: 6, y: 6, w: 150, h: 46 },
   ];
-  // the rows of the top-right panel work for everyone
-  if (L.kind === 'pen') b.push({ id: 'gate', x: W - 96, y: 6, w: 90, h: 15 }, { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 });
-  else {
-    b.push(
-      { id: 'speed', x: W - 96, y: 6, w: 90, h: 15 },
-      { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 },
-      { id: 'build', x: W - 96, y: 44, w: 44, h: 16 },
-      { id: 'flow', x: W - 50, y: 44, w: 44, h: 16 },
-    );
-  }
-  // with the readout showing, buttons under it run the perf test and the cheats: skip to the
-  // next level, and (herdways) build the level's winning layout
-  if (L.perf) b.push(PERF_TEST, SKIP);
-  if (L.perf && L.kind === 'herdway') b.push(SOLVE);
+  // the rows of the top-right panel work for everyone: speed, and the Woof-Woof once it is his
+  b.push({ id: 'speed', x: W - 96, y: 6, w: 90, h: 15 });
+  if (L.can.woof) b.push({ id: 'woof', x: W - 96, y: 35, w: 90, h: 19 });
+  const below = L.can.woof ? 58 : 41;
+  if (L.can.build) b.push({ id: 'build', x: W - 96, y: below, w: 44, h: 16 }, { id: 'flow', x: W - 50, y: below, w: 44, h: 16 });
+  // with the readout showing, buttons under it run the perf test and the cheats: skip this Form,
+  // build its reference setup, start the valley afresh
+  if (L.perf) b.push(PERF_TEST, SKIP, RESET);
+  if (L.perf && L.can.solve) b.push(SOLVE);
   if (L.won) {
     if (L.won.age > 1.6) {
       const n = L.won.buttons.length;
@@ -67,20 +68,23 @@ export function hudButtons(L: HudLayout): Button[] {
   }
   if (L.build) {
     // the toolbar along the bottom, clear of the turn and zoom buttons on the left
-    const tw = 50;
-    const x0 = L.touch ? 162 : Math.round(W / 2 - (TOOLS.length * tw) / 2);
-    TOOLS.forEach((t, k) => b.push({ id: `tool:${t}`, x: x0 + k * tw, y: H - 34, w: tw - 2, h: 28 }));
+    const tw = 54;
+    const x0 = L.touch ? 162 : Math.round(W / 2 - (L.tools.length * tw) / 2);
+    L.tools.forEach((t, k) => b.push({ id: `tool:${t}`, x: x0 + k * tw, y: H - 34, w: tw - 2, h: 28 }));
     const ax = W - 6;
-    if (L.build.drawing) b.push({ id: 'finish', x: ax - 64, y: H - 64, w: 64, h: 24 }, { id: 'cancel', x: ax - 132, y: H - 64, w: 64, h: 24 });
-    else if (L.build.tool === 'shed' || L.build.tool === 'spindle' || L.build.tool === 'flap' || L.build.tool === 'rack') b.push({ id: 'rotate', x: ax - 64, y: H - 64, w: 64, h: 24 });
+    if (L.build.drawing) b.push({ id: 'cancel', x: ax - 64, y: H - 64, w: 64, h: 24 });
+    else if (L.build.turns) b.push({ id: 'rotate', x: ax - 64, y: H - 64, w: 64, h: 24 });
   }
   if (L.touch) {
     if (!L.build) {
-      b.push(
-        { id: 'feed', x: W - 66, y: H - 66, w: 60, h: 60 },
-        { id: 'honk', x: W - 128, y: H - 52, w: 56, h: 46 },
-      );
-      if (L.kind === 'pen') b.push({ id: 'gate', x: W - 190, y: H - 52, w: 56, h: 46 });
+      // FEED in the corner, and the jobs Gafoop can do just now to its left
+      b.push({ id: 'feed', x: W - 66, y: H - 66, w: 60, h: 60 });
+      let x = W - 128;
+      for (const id of ['woof', 'gate', 'shear', 'spin'] as const) {
+        if (!L.can[id]) continue;
+        b.push({ id, x, y: H - 52, w: 56, h: 46 });
+        x -= 62;
+      }
     }
     b.push(
       { id: 'rotL', x: 6, y: H - 38, w: 32, h: 32 },
@@ -93,8 +97,9 @@ export function hudButtons(L: HudLayout): Button[] {
 }
 
 const PERF_TEST: Button = { id: 'perfTest', x: 6, y: 68, w: 124, h: 13 };
-const SKIP: Button = { id: 'skip', x: 134, y: 68, w: 86, h: 13 };
-const SOLVE: Button = { id: 'solve', x: 224, y: 68, w: 56, h: 13 };
+const SKIP: Button = { id: 'skip', x: 134, y: 68, w: 80, h: 13 };
+const SOLVE: Button = { id: 'solve', x: 218, y: 68, w: 56, h: 13 };
+const RESET: Button = { id: 'reset', x: 6, y: 84, w: 90, h: 13 };
 
 export function buttonAt(buttons: Button[], x: number, y: number): ButtonId | null {
   // later buttons sit on top
@@ -107,10 +112,16 @@ export function buttonAt(buttons: Button[], x: number, y: number): ButtonId | nu
 
 export interface HudState {
   layout: HudLayout;
-  objective: { title: string; count: number; total: number; label: string; icon: 'sheep' | 'yarn' };
+  objective: { title: string; count: number; total: number; label: string; icon: 'sheep' | 'yarn' | 'fleece' };
   time: number;
-  /** null on levels without a gate */
-  gateOpen: boolean | null;
+  /** the hand gate within reach, open or shut; null if none is */
+  gateNear: boolean | null;
+  /** Gafoop's stock */
+  stock: { fleece: number; yarn: number };
+  /** the Woof-Woof is sounding */
+  woofing: boolean;
+  /** a job in hand: shearing or spinning, and how far along */
+  handJob: { kind: 'shear' | 'spin'; progress: number } | null;
   /** simulation speed (herdway levels) */
   speed: number;
   flowOn: boolean;
@@ -126,8 +137,7 @@ export interface HudState {
   penArrow: { x: number; y: number; angle: number; label: string } | null;
   floaters: { text: string; x: number; y: number; age: number }[];
   cursor: { x: number; y: number; tool: 'idle' | 'bucket' } | null;
-  won: { time: number; age: number; lines: [string, string] } | null;
-  megaphoneReady: number;
+  won: { time: number; age: number; lines: [string, string]; code: string } | null;
   /** touch controls are showing */
   touch: boolean;
   feeding: boolean;
@@ -147,6 +157,7 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   panel(g, 6, 6, 150, 46, { fill: C.ink, border: C.straw, accent: C.gold });
   f.small.draw(g, ob.title, 12, 11, { color: C.straw });
   if (ob.icon === 'sheep') drawSprite(g, 'sheep', 12, 24, 2);
+  else if (ob.icon === 'fleece') fleece(g, 13, 25);
   else skein(g, 14, 25);
   f.title.draw(g, `${ob.count}/${ob.total}`, 42, 20, { color: ob.count >= ob.total ? C.lime : C.white, shadow: C.black });
   f.small.draw(g, ob.label, 104, 26, { color: C.fog });
@@ -161,29 +172,33 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
     f.small.draw(g, s.touch ? 'RUN PERF TEST' : 'RUN PERF TEST [P]', b.x + 5, b.y + 3, { color: C.gold });
     const k = SKIP;
     panel(g, k.x, k.y, k.w, k.h, { fill: s.held.has('skip') ? C.coal : C.ink, border: C.gold, shadow: null });
-    f.small.draw(g, s.touch ? 'SKIP LEVEL' : 'SKIP LEVEL []]', k.x + 5, k.y + 3, { color: C.gold });
-    if (s.layout.kind === 'herdway') {
+    f.small.draw(g, s.touch ? 'SKIP FORM' : 'SKIP FORM []]', k.x + 5, k.y + 3, { color: C.gold });
+    const r = RESET;
+    panel(g, r.x, r.y, r.w, r.h, { fill: s.held.has('reset') ? C.coal : C.ink, border: C.rose, shadow: null });
+    f.small.draw(g, 'NEW VALLEY', r.x + 5, r.y + 3, { color: C.rose });
+    if (s.layout.can.solve) {
       const v = SOLVE;
       panel(g, v.x, v.y, v.w, v.h, { fill: s.held.has('solve') ? C.coal : C.ink, border: C.gold, shadow: null });
       f.small.draw(g, s.touch ? 'SOLVE' : 'SOLVE [\\]', v.x + 5, v.y + 3, { color: C.gold });
     }
   }
 
-  // --- gate (or speed) and megaphone
-  panel(g, W - 96, 6, 90, 34, { fill: C.ink, border: C.mist });
-  if (s.gateOpen !== null) {
-    f.small.draw(g, 'GATE', W - 90, 11, { color: C.fog });
-    f.small.draw(g, s.gateOpen ? 'OPEN' : 'SHUT', W - 58, 11, { color: s.gateOpen ? C.lime : C.scarlet });
-    if (!s.touch) f.tiny.draw(g, '[G]', W - 26, 11, { color: C.lilac });
-  } else {
-    f.small.draw(g, 'SPEED', W - 90, 11, { color: C.fog });
-    f.small.draw(g, `X${s.speed}`, W - 52, 11, { color: s.speed > 1 ? C.gold : C.mist });
-    if (!s.touch) f.tiny.draw(g, '[T]', W - 26, 11, { color: C.lilac });
+  // --- speed, stock, and the Woof-Woof
+  const woof = s.layout.can.woof;
+  panel(g, W - 96, 6, 90, woof ? 48 : 31, { fill: C.ink, border: C.mist });
+  f.small.draw(g, 'SPEED', W - 90, 11, { color: C.fog });
+  f.small.draw(g, `X${s.speed}`, W - 52, 11, { color: s.speed > 1 ? C.gold : C.mist });
+  if (!s.touch) f.tiny.draw(g, '[T]', W - 26, 11, { color: C.lilac });
+  fleece(g, W - 90, 23);
+  f.small.draw(g, String(s.stock.fleece), W - 74, 25, { color: C.mist });
+  skein(g, W - 50, 22);
+  f.small.draw(g, String(s.stock.yarn), W - 32, 25, { color: C.mist });
+  if (woof) {
+    rect(g, W - 92, 37, 82, 14, s.woofing ? C.wine : C.coal);
+    f.small.draw(g, s.woofing ? 'WOOF! WOOF!' : 'WOOF-WOOF', W - 88, 40, { color: s.woofing ? C.gold : C.fog });
+    if (!s.touch) f.tiny.draw(g, '[SPC]', W - 34, 41, { color: C.lilac });
   }
-  f.small.draw(g, 'HONK', W - 90, 25, { color: C.fog });
-  rect(g, W - 58, 26, 46, 5, C.coal);
-  rect(g, W - 58, 26, Math.round(46 * s.megaphoneReady), 5, s.megaphoneReady >= 1 ? C.gold : C.rust);
-  if (s.layout.kind === 'herdway' && !s.won) {
+  if (s.layout.can.build && !s.won) {
     for (const b of hudButtons(s.layout)) {
       if (b.id !== 'build' && b.id !== 'flow') continue;
       const on = b.id === 'build' ? s.layout.build !== null : s.flowOn;
@@ -192,6 +207,14 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
       const label = b.id === 'build' ? (s.touch ? 'BUILD' : 'B BUILD') : s.touch ? 'FLOW' : 'O FLOW';
       f.small.draw(g, label, b.x + b.w / 2, b.y + 4 + (down ? 1 : 0), { color: on ? C.gold : C.mist, align: 'center' });
     }
+  }
+  // a job in hand: a bar over the field
+  if (s.handJob && !s.won) {
+    const w = 90;
+    const x = Math.round(W / 2 - w / 2);
+    rect(g, x - 1, 61, w + 2, 9, C.black);
+    rect(g, x, 62, Math.round(w * s.handJob.progress), 7, s.handJob.kind === 'shear' ? C.mist : C.lavender);
+    f.tiny.draw(g, s.handJob.kind === 'shear' ? 'SHEARING' : 'SPINNING', W / 2, 72, { color: C.white, align: 'center', outline: C.black });
   }
 
   // --- help strip
@@ -204,16 +227,21 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   } else if (s.touch) {
     if (helpAlpha > 0) {
       g.globalAlpha = helpAlpha;
-      const text = s.portrait ? 'TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD' : 'DRAG TO FLY  -  HOLD FEED TO LURE  -  HONK SCATTERS';
+      const text = s.portrait ? 'TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD' : 'DRAG TO FLY  -  HOLD FEED: THEY FOLLOW THE BUCKET';
       const w = f.small.measure(text) + 12;
       rect(g, Math.round(W / 2 - w / 2), 44, w, 13, C.black);
       f.small.draw(g, text, W / 2, 47, { color: s.portrait ? C.gold : C.mist, align: 'center' });
       g.globalAlpha = 1;
     }
   } else if (helpAlpha > 0) {
-    const items: [string, string][] = s.layout.kind === 'pen'
-      ? [['MOUSE', 'fly'], ['HOLD CLICK', 'feed bucket'], ['SPACE', 'honk'], ['G', 'gate'], ['Q E', 'rotate'], ['WHEEL', 'zoom'], ['H', 'help']]
-      : [['MOUSE', 'fly'], ['HOLD CLICK', 'feed'], ['SPACE', 'honk'], ['B', 'build'], ['O', 'flow'], ['T', 'speed'], ['Q E', 'rotate'], ['H', 'help']];
+    const c = s.layout.can;
+    const items: [string, string][] = [['MOUSE', 'fly'], ['HOLD CLICK', 'feed']];
+    if (c.woof) items.push(['SPACE', 'woof']);
+    items.push(['G', 'gate']);
+    if (c.shear) items.push(['X', 'shear']);
+    if (c.spin) items.push(['C', 'spin']);
+    if (c.build) items.push(['B', 'build'], ['O', 'flow']);
+    items.push(['T', 'speed'], ['Q E', 'rotate'], ['H', 'help']);
     let w = 0;
     for (const [k, v] of items) w += f.small.measure(k) + f.tiny.measure(v) + 14;
     let x = Math.round(W / 2 - w / 2);
@@ -274,7 +302,7 @@ function button(g: CanvasRenderingContext2D, b: Button, down: boolean, border: s
   panel(g, b.x, b.y + (down ? 1 : 0), b.w, b.h, { fill: down ? C.coal : C.ink, border, shadow: down ? null : C.black });
 }
 
-const TOUCH_IDS: ReadonlySet<ButtonId> = new Set<ButtonId>(['feed', 'honk', 'gate', 'rotL', 'rotR', 'zoomIn', 'zoomOut']);
+const TOUCH_IDS: ReadonlySet<ButtonId> = new Set<ButtonId>(['feed', 'woof', 'gate', 'shear', 'spin', 'rotL', 'rotR', 'zoomIn', 'zoomOut']);
 
 function touchControls(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void {
   for (const b of hudButtons(s.layout)) {
@@ -292,16 +320,19 @@ function touchControls(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void
       rect(g, cx - 6, b.y + 15 + dy, 12, 12, s.feeding ? C.mist : C.fog);
       rect(g, cx - 6, b.y + 15 + dy, 12, 2, C.straw);
       rect(g, cx - 5, b.y + 9 + dy, 10, 1, C.lilac);
-    } else if (b.id === 'honk') {
-      const ready = s.megaphoneReady >= 1;
-      button(g, b, down, ready ? C.gold : C.lilac);
-      f.small.draw(g, 'HONK', cx, b.y + 12 + dy, { color: ready ? C.gold : C.fog, align: 'center' });
-      rect(g, b.x + 8, b.y + 30 + dy, b.w - 16, 5, C.coal);
-      rect(g, b.x + 8, b.y + 30 + dy, Math.round((b.w - 16) * s.megaphoneReady), 5, ready ? C.gold : C.rust);
+    } else if (b.id === 'woof') {
+      button(g, b, down || s.woofing, s.woofing ? C.gold : C.straw);
+      f.small.draw(g, 'WOOF', cx, b.y + 12 + dy, { color: s.woofing ? C.gold : C.straw, align: 'center' });
+      f.tiny.draw(g, 'HOLD', cx, b.y + 28 + dy, { color: C.fog, align: 'center' });
     } else if (b.id === 'gate') {
-      button(g, b, down, s.gateOpen ? C.lime : C.scarlet);
+      button(g, b, down, s.gateNear ? C.lime : C.scarlet);
       f.small.draw(g, 'GATE', cx, b.y + 12 + dy, { color: C.mist, align: 'center' });
-      f.small.draw(g, s.gateOpen ? 'OPEN' : 'SHUT', cx, b.y + 28 + dy, { color: s.gateOpen ? C.lime : C.scarlet, align: 'center' });
+      f.small.draw(g, s.gateNear ? 'OPEN' : 'SHUT', cx, b.y + 28 + dy, { color: s.gateNear ? C.lime : C.scarlet, align: 'center' });
+    } else if (b.id === 'shear' || b.id === 'spin') {
+      const on = s.handJob?.kind === b.id;
+      button(g, b, down || on, on ? C.gold : C.mist);
+      f.small.draw(g, b.id === 'shear' ? 'SHEAR' : 'SPIN', cx, b.y + 12 + dy, { color: on ? C.gold : C.mist, align: 'center' });
+      f.tiny.draw(g, 'HOLD', cx, b.y + 28 + dy, { color: C.fog, align: 'center' });
     } else {
       button(g, b, down, C.mist);
       const label = b.id === 'rotL' ? 'Q' : b.id === 'rotR' ? 'E' : b.id === 'zoomIn' ? '+' : '-';
@@ -328,6 +359,15 @@ function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, 
   lines.forEach((l, i) => f.body.draw(g, l, bx + 6, by + 3 + i * 14, { color: C.ink }));
 }
 
+/** A fleece: a little white cloud. */
+function fleece(g: CanvasRenderingContext2D, x: number, y: number): void {
+  rect(g, x, y + 2, 14, 8, C.black);
+  rect(g, x + 1, y, 12, 2, C.black);
+  rect(g, x + 1, y + 1, 12, 8, C.mist);
+  rect(g, x + 2, y + 2, 4, 2, C.white);
+  rect(g, x + 8, y + 3, 3, 2, C.white);
+}
+
 /** A little skein of yarn, for the objective panel. */
 function skein(g: CanvasRenderingContext2D, x: number, y: number): void {
   rect(g, x, y + 2, 14, 10, C.black);
@@ -337,10 +377,8 @@ function skein(g: CanvasRenderingContext2D, x: number, y: number): void {
 }
 
 const WON_LABEL: Partial<Record<ButtonId, [string, string]>> = {
-  again: ['R  AGAIN', 'AGAIN'],
-  bigger: ['N  BIGGER FLOCK', 'BIGGER FLOCK'],
-  next: ['L  NEXT LEVEL', 'NEXT LEVEL'],
-  keep: ['K  KEEP BUILDING', 'KEEP BUILDING'],
+  next: ['L  NEXT FORM', 'NEXT FORM'],
+  keep: ['K  KEEP GOING', 'KEEP GOING'],
 };
 
 /** The build toolbar, and the buttons a half-drawn race or a turnable device needs. */
@@ -354,13 +392,14 @@ function toolbar(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void {
       const t = b.id.slice(5) as ToolId;
       const on = build.tool === t;
       button(g, b, down || on, on ? C.gold : C.lilac);
-      const n = TOOLS.indexOf(t) + 1;
+      const n = s.layout.tools.indexOf(t) + 1;
       if (!s.touch && n <= 9) f.tiny.draw(g, String(n), b.x + 4, b.y + 3 + dy, { color: C.fog });
       f.small.draw(g, TOOL_LABEL[t], cx, b.y + 15 + dy, { color: on ? C.gold : t === 'remove' ? C.rose : C.mist, align: 'center' });
     } else if (b.id === 'finish' || b.id === 'cancel' || b.id === 'rotate') {
       const c = b.id === 'finish' ? C.lime : b.id === 'cancel' ? C.rose : C.straw;
       button(g, b, down, c);
-      const label = b.id === 'finish' ? (s.touch ? 'FINISH' : 'ENTER FINISH') : b.id === 'cancel' ? (s.touch ? 'CANCEL' : 'ESC') : s.touch ? 'TURN' : 'R TURN';
+      const turnLabel = build.tool === 'gate' ? 'KIND' : 'TURN';
+      const label = b.id === 'finish' ? (s.touch ? 'FINISH' : 'ENTER FINISH') : b.id === 'cancel' ? (s.touch ? 'CANCEL' : 'ESC') : s.touch ? turnLabel : `R ${turnLabel}`;
       f.small.draw(g, label, cx, b.y + 8 + dy, { color: c, align: 'center' });
     }
   }
@@ -375,7 +414,7 @@ function won(g: CanvasRenderingContext2D, f: Fonts, w: NonNullable<HudState['won
   // the verdict card slides up, then the Bureau's stamp lands on it
   const py = Math.round(cy - 6 + (1 - k) * 30);
   panel(g, cx - 170, py, 340, 104, { fill: C.ink, border: C.straw, accent: C.gold });
-  f.small.draw(g, 'GALACTIC BUREAU OF CONQUEST - FORM 8-A', cx, py + 8, { color: C.fog, align: 'center' });
+  f.small.draw(g, `GALACTIC BUREAU OF CONQUEST - FORM ${w.code}`, cx, py + 8, { color: C.fog, align: 'center' });
   if (age > 0.8) {
     f.body.draw(g, w.lines[0].replace('{time}', mmss(time)), cx, py + 52, { color: C.white, align: 'center' });
     f.small.draw(g, w.lines[1], cx, py + 70, { color: C.straw, align: 'center' });

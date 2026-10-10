@@ -77,13 +77,37 @@ export interface Lick {
   at: Pt;
 }
 
-export type Device = Lane | Hurdle | Flap | Station | Rack | Chimes | Lick;
+/**
+ * A hurdle gate, a to b. Shut, it is a fence; open, sheep pass. It opens by Gafoop's hand, or on
+ * a timer, or when the grass on its watched side (the side its arrow points away from: left of
+ * a→b turned a quarter) has been grazed down, and then lets the flock through to the other side.
+ */
+export type GateMode = 'hand' | 'timer' | 'grass';
+export interface Gate {
+  kind: 'gate';
+  id: number;
+  a: Pt;
+  b: Pt;
+  mode: GateMode;
+  /** grass gates: watch the side to the right of a→b instead of the left */
+  flip?: boolean;
+}
+
+/** A trough: while it holds feed, sheep come to it from all over the field. Gafoop fills it. */
+export interface Trough {
+  kind: 'trough';
+  id: number;
+  at: Pt;
+  angle: number;
+}
+
+export type Device = Lane | Hurdle | Flap | Station | Rack | Chimes | Lick | Gate | Trough;
 export type DeviceKind = Device['kind'];
 /** A device to add: as above, the id optional (one is handed out). */
 export type DeviceSpec = Device extends unknown ? (Device extends infer D ? (D extends Device ? Omit<D, 'id'> & { id?: number } : never) : never) : never;
 
-const seg = (a: Pt, b: Pt, solid = false, oneWay?: Pt): Obstacle => ({
-  ax: a.x, ay: a.y, bx: b.x, by: b.y, radius: POST, solid, ...(oneWay ? { oneWay: { dx: oneWay.x, dy: oneWay.y } } : {}),
+const seg = (a: Pt, b: Pt, solid = false, oneWay?: Pt, door = false): Obstacle => ({
+  ax: a.x, ay: a.y, bx: b.x, by: b.y, radius: POST, solid, ...(oneWay ? { oneWay: { dx: oneWay.x, dy: oneWay.y } } : {}), ...(door ? { door: true } : {}),
 });
 
 /** The two side lines of a race along `points`, mitred at the bends. */
@@ -159,6 +183,12 @@ export function deviceObstacles(d: Device): Obstacle[] {
     }
     case 'hurdle':
       return [seg(d.a, d.b)];
+    case 'trough': {
+      // a long low box: sheep stand round it, not in it
+      const ux = Math.cos(d.angle) * 0.9;
+      const uy = Math.sin(d.angle) * 0.9;
+      return [{ ax: d.at.x - ux, ay: d.at.y - uy, bx: d.at.x + ux, by: d.at.y + uy, radius: 0.3, solid: false }];
+    }
     case 'flap': {
       const ux = Math.cos(d.angle);
       const uy = Math.sin(d.angle);
@@ -183,11 +213,32 @@ export function deviceObstacles(d: Device): Obstacle[] {
 export function doorObstacles(s: Station, intakeShut: boolean, exitShut: boolean): Obstacle[] {
   const { back, front, side } = stationFrame(s);
   const h = LANE_W / 2 + 0.05;
-  const across = (p: Pt) => seg({ x: p.x + side.x * h, y: p.y + side.y * h }, { x: p.x - side.x * h, y: p.y - side.y * h }, true);
+  const across = (p: Pt) => seg({ x: p.x + side.x * h, y: p.y + side.y * h }, { x: p.x - side.x * h, y: p.y - side.y * h }, true, undefined, true);
   const out: Obstacle[] = [];
   if (intakeShut) out.push(across(back));
   if (exitShut) out.push(across(front));
   return out;
+}
+
+/** A gate's leaf as a fence, when it is shut. */
+export function gateObstacle(g: Gate): Obstacle {
+  return seg(g.a, g.b);
+}
+
+/**
+ * The point a grass gate watches: a few metres out on its watched side, from the middle of the
+ * gate. Sheep go through it toward the other side.
+ */
+export function gateWatch(g: Gate, reach = 5): { at: Pt; toward: Pt } {
+  const ex = g.b.x - g.a.x;
+  const ey = g.b.y - g.a.y;
+  const l = Math.hypot(ex, ey) || 1;
+  // left of a→b (y points south, so this is (ey, -ex)), or right when flipped
+  const s = g.flip ? -1 : 1;
+  const nx = (ey / l) * s;
+  const ny = (-ex / l) * s;
+  const m = { x: (g.a.x + g.b.x) / 2, y: (g.a.y + g.b.y) / 2 };
+  return { at: { x: m.x + nx * reach, y: m.y + ny * reach }, toward: { x: -nx, y: -ny } };
 }
 
 /** Where a device sits, for picking and labels. */
@@ -200,6 +251,7 @@ export function deviceCentre(d: Device): Pt {
       return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     }
     case 'hurdle':
+    case 'gate':
       return { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 };
     default:
       return d.at;
@@ -223,6 +275,7 @@ export function deviceDistance(d: Device, p: Pt): number {
       return Math.max(0, best - LANE_W / 2);
     }
     case 'hurdle':
+    case 'gate':
       return segDist(d.a, d.b);
     case 'shed':
     case 'spindle':

@@ -93,12 +93,13 @@ describe.each(MODELS)('$name', ({ make, full }) => {
     expect(countIn(m, 30, 0, 60, 40)).toBeGreaterThanOrEqual(16);
   });
 
-  test.skipIf(!full)('a flock on good grass stays and grazes', () => {
+  test.skipIf(!full)('a flock on good grass grazes its way slowly, it does not set off', () => {
     const grass = new GrassField(60, 40);
     const m = grazing(make, grass, 11, 20, 30, 20);
     const c0 = centroid(m);
     run(m, grass, 60);
     const c1 = centroid(m);
-    expect(Math.hypot(c1.x - c0.x, c1.y - c0.y)).toBeLessThan(4);
+    // mowing across the field, a few metres a minute (walking would be a metre a second)
+    expect(Math.hypot(c1.x - c0.x, c1.y - c0.y)).toBeLessThan(10);
   });
 });

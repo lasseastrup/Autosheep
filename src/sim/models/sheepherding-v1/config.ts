@@ -210,6 +210,8 @@ export interface SimConfig {
     pull: number;
     /** on poor grass a grazing sheep steps this much more often (at full hunger, bare ground) */
     restless: number;
+    /** how much a lure (bucket, oats) draws a sheep that is full, and one that is starving */
+    appetite: [number, number];
   };
   pbd: { iterations: number; stiffness: number; slack: number; friction: number; xsph: number };
   behaviourEnabled: boolean;
@@ -386,7 +388,7 @@ export function defaultConfig(): SimConfig {
     obstacle: { dangerStart: 2.2, dangerFull: 0.35, sightFactor: 0.15 },
     lure: { walkRate: 1.2, weight: 1.4, arriveDist: 2.0 },
     startle: { echo: 2.0, echoStrength: 0.6 },
-    grazing: { hungerRate: 1 / 150, fill: 20, muzzle: 0.5, lookEvery: 1.5, look: [2.5, 5, 9, 15], walkFrom: 4, worth: 0.15, pull: 0.5, restless: 4 },
+    grazing: { hungerRate: 1 / 150, fill: 20, muzzle: 0.5, lookEvery: 1.5, look: [2.5, 5, 9, 15], walkFrom: 4, worth: 0.15, pull: 0.5, restless: 4, appetite: [0.45, 1.5] },
     pbd: { iterations: 3, stiffness: 0.6, slack: 0.97, friction: 0.3, xsph: 0.3 },
     behaviourEnabled: true,
   };

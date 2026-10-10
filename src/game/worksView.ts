@@ -24,6 +24,11 @@ interface Built {
   station?: StationParts;
   chimes?: THREE.Object3D[];
   rackSkeins?: THREE.Object3D[];
+  /** a gate's swinging leaf, and how open it is drawn */
+  leaf?: THREE.Object3D;
+  leafShown?: number;
+  /** a trough's feed, raised and lowered with how full it is */
+  feed?: THREE.Object3D;
 }
 
 /**
@@ -61,6 +66,16 @@ export class WorksView {
         const since = (time + d.id * 1.7) % C_.period;
         const sway = Math.exp(-since * 1.5) * Math.sin(since * 14);
         b.chimes.forEach((t, i) => (t.rotation.z = sway * (0.5 + 0.2 * i)));
+      }
+      if (d.kind === 'gate' && b?.leaf) {
+        const open = this.works.gates.get(d.id)?.open ? 1 : 0;
+        b.leafShown = (b.leafShown ?? 0) + (open - (b.leafShown ?? 0)) * k;
+        b.leaf.rotation.y = b.leafShown * 1.55;
+      }
+      if (d.kind === 'trough' && b?.feed) {
+        const f = this.works.feed.get(d.id) ?? 0;
+        b.feed.visible = f > 0.01;
+        b.feed.scale.y = Math.max(0.05, f);
       }
       if (d.kind === 'rack' && b?.rackSkeins) {
         const shown = Math.min(b.rackSkeins.length, this.works.yarn);
@@ -109,7 +124,63 @@ function build(d: Device): Built {
       return chimesMesh(d.at);
     case 'lick':
       return { root: lickMesh(d.at) };
+    case 'gate':
+      return gateMesh(d.a, d.b, d.mode);
+    case 'trough':
+      return troughMesh(d.at, d.angle);
   }
+}
+
+/**
+ * A hurdle gate hinged on its first post: three bars and a brace on a swinging leaf, between
+ * taller gateposts. Timed gates carry a little clock on the hinge post, grass gates a tuft.
+ */
+function gateMesh(a: Pt, b: Pt, mode: 'hand' | 'timer' | 'grass'): Built {
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const root = new THREE.Group();
+  root.position.set(a.x, 0, a.y);
+  root.rotation.y = -Math.atan2(b.y - a.y, b.x - a.x);
+  const leaf = new THREE.Group();
+  const wood = toon(C.straw);
+  for (const y of [0.3, 0.55, 0.8]) leaf.add(mesh(new THREE.BoxGeometry(len - 0.2, 0.08, 0.06), wood, [len / 2, y, 0]));
+  for (const x of [0.1, len / 2, len - 0.1]) leaf.add(mesh(new THREE.BoxGeometry(0.08, 0.7, 0.07), wood, [x, 0.55, 0]));
+  const brace = mesh(new THREE.BoxGeometry(len * 0.95, 0.06, 0.05), wood, [len / 2, 0.55, 0.02]);
+  brace.rotation.z = Math.atan2(0.5, len);
+  leaf.add(brace);
+  root.add(leaf);
+  const postMat = toon(C.rust);
+  root.add(mesh(new THREE.BoxGeometry(0.2, 1.1, 0.2), postMat, [0, 0.55, 0]));
+  root.add(mesh(new THREE.BoxGeometry(0.2, 1.1, 0.2), postMat, [len, 0.55, 0]));
+  if (mode === 'timer') {
+    root.add(mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 10), toon(C.bone), [0, 1.12, 0], [Math.PI / 2, 0, 0]));
+    root.add(mesh(new THREE.BoxGeometry(0.03, 0.12, 0.08), toon(C.ink), [0, 1.16, 0]));
+  } else if (mode === 'grass') {
+    for (let k = 0; k < 3; k++) root.add(mesh(new THREE.ConeGeometry(0.04, 0.3, 3), toon(C.leaf), [0.05 * (k - 1), 1.25, 0.03 * k]));
+  }
+  castShadows(root);
+  return { root, leaf, leafShown: 0 };
+}
+
+/** A wooden trough on legs, with a heap of oats that sinks as the sheep eat it. */
+function troughMesh(at: Pt, angle: number): Built {
+  const root = new THREE.Group();
+  root.position.set(at.x, 0, at.y);
+  root.rotation.y = -angle;
+  const wood = toon(C.rust);
+  root.add(mesh(new THREE.BoxGeometry(1.9, 0.12, 0.6), wood, [0, 0.32, 0]));
+  root.add(mesh(new THREE.BoxGeometry(1.9, 0.3, 0.08), wood, [0, 0.45, 0.28]));
+  root.add(mesh(new THREE.BoxGeometry(1.9, 0.3, 0.08), wood, [0, 0.45, -0.28]));
+  for (const x of [-0.85, 0.85]) {
+    root.add(mesh(new THREE.BoxGeometry(0.1, 0.3, 0.6), wood, [x, 0.45, 0]));
+    root.add(mesh(new THREE.BoxGeometry(0.1, 0.3, 0.1), wood, [x, 0.13, 0.22]));
+    root.add(mesh(new THREE.BoxGeometry(0.1, 0.3, 0.1), wood, [x, 0.13, -0.22]));
+  }
+  const feed = new THREE.Group();
+  feed.position.y = 0.38;
+  feed.add(mesh(new THREE.BoxGeometry(1.7, 0.22, 0.46), toon(C.straw), [0, 0.11, 0]));
+  root.add(feed);
+  castShadows(root);
+  return { root, feed };
 }
 
 /** Shadows on, and the parts merged into a draw call or two. */

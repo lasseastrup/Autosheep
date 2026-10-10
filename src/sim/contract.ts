@@ -62,6 +62,9 @@ export interface Stimulus {
   /** flow: how far ahead along the path a sheep is drawn to (default 3). chute: how far past
    * the front sheep walk on (0: the front is shut) */
   lookahead?: number;
+  /** lure: felt only by sheep hungrier than this (0..1), more the hungrier (grazing only;
+   * without a grass field every lure is felt) */
+  appetite?: number;
 }
 
 /**
@@ -118,6 +121,12 @@ export interface Obstacle {
    * into groups. Hurdles only, never solid.
    */
   oneWay?: { dx: number; dy: number };
+  /**
+   * A door (a station's): shut, it stops sheep like any fence, but a hungry sheep still knows
+   * the grass past it is there and will go in at the other end to reach it. Grazing looks
+   * through doors; it does not look through gates or fences.
+   */
+  door?: boolean;
 }
 
 /** Is (x, y) on the side of one-way obstacle o that sheep may pass from? */
@@ -130,7 +139,8 @@ export interface FlockInit {
   /** world bounds; the edges are impassable */
   width: number;
   height: number;
-  sheep: { x: number; y: number; heading?: number }[];
+  /** where each sheep starts; `hunger` (0 full .. 1 starving) carries a saved flock's on */
+  sheep: { x: number; y: number; heading?: number; hunger?: number }[];
 }
 
 /** Per-sheep outputs, structure-of-arrays, valid for indices [0, count). Read-only to the game. */
@@ -145,6 +155,8 @@ export interface FlockOutputs {
   readonly fear: Float32Array;
   /** sheep with the same id are currently one connected group */
   readonly group: Int32Array;
+  /** 0 full .. 1 starving (grazing; stays 0 without a grass field) */
+  readonly hunger: Float32Array;
 }
 
 export interface FlockModel {

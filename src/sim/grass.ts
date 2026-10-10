@@ -14,9 +14,9 @@ export const GRASS = {
   cell: 0.5,
   /** seconds for grass to grow back from bare to full (it starts slowly: a grazed-out patch
    * needs leaves before it can grow quickly) */
-  regrow: 360,
+  regrow: 900,
   /** a grazing sheep's appetite: full cells' worth eaten per second, with its head down */
-  bite: 0.35,
+  bite: 0.4,
   /** a mouthful's reach around the muzzle, m */
   mouth: 0.45,
   /** growth is applied in steps this long, s (it is slow, and the field is big) */

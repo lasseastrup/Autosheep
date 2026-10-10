@@ -5,13 +5,23 @@
  */
 import { C } from '../engine/palette';
 import {
-  deviceDistance, deviceObstacles, LANE_W, laneSides, STATION_LEN, stationFrame,
-  type Device, type DeviceSpec, type Dir, type Lane, type Pt,
+  deviceDistance, deviceObstacles, gateWatch, LANE_W, laneSides, STATION_LEN, stationFrame,
+  type Device, type DeviceSpec, type Dir, type Gate, type GateMode, type Lane, type Pt,
 } from '../works/devices';
 import type { Works } from '../works/works';
 import type { ToolId } from './hud';
 
 const SNAP = 2;
+/** gates are this long at most (a hurdle panel or three) */
+const GATE_MAX = 4.5;
+
+/** The kinds of gate there are, in the order ROTATE steps through them. */
+const GATE_KINDS: { mode: GateMode; flip: boolean; label: string }[] = [
+  { mode: 'hand', flip: false, label: 'HAND GATE' },
+  { mode: 'timer', flip: false, label: 'TIMED GATE' },
+  { mode: 'grass', flip: false, label: 'GRASS GATE' },
+  { mode: 'grass', flip: true, label: 'GRASS GATE' },
+];
 
 export interface Ghost {
   /** outlines to draw, in sim coordinates, each a polyline */
@@ -25,16 +35,33 @@ export interface Ghost {
 }
 
 export class Builder {
-  tool: ToolId = 'lane';
+  tool: ToolId = 'hurdle';
   /** the race being drawn */
   points: Pt[] = [];
   private hurdleFrom: Pt | null = null;
+  /** which kind of gate the gate tool puts up (an index into the kinds that are unlocked) */
+  private gateKind = 0;
   /** turns: a station's direction, or a flap's flip */
   turn = 0;
   /** where the pointer is on the ground (sim coordinates), or null */
   hover: Pt | null = null;
 
-  constructor(private readonly works: Works, private readonly levelPorts: () => Pt[]) {}
+  constructor(
+    private readonly works: Works,
+    private readonly levelPorts: () => Pt[],
+    /** the gate modes Gafoop has */
+    private readonly gateModes: () => readonly GateMode[] = () => ['hand'],
+  ) {}
+
+  private gateKinds(): typeof GATE_KINDS {
+    const have = this.gateModes();
+    return GATE_KINDS.filter((k) => have.includes(k.mode));
+  }
+
+  private get gateSpec(): (typeof GATE_KINDS)[number] {
+    const ks = this.gateKinds();
+    return ks[this.gateKind % ks.length];
+  }
 
   setTool(t: ToolId): void {
     this.tool = t;
@@ -42,7 +69,7 @@ export class Builder {
   }
 
   get drawing(): boolean {
-    return (this.tool === 'lane' && this.points.length > 0) || (this.tool === 'hurdle' && this.hurdleFrom !== null);
+    return (this.tool === 'lane' && this.points.length > 0) || ((this.tool === 'hurdle' || this.tool === 'gate') && this.hurdleFrom !== null);
   }
 
   cancel(): void {
@@ -51,7 +78,13 @@ export class Builder {
   }
 
   rotate(): void {
-    this.turn = (this.turn + 1) % 4;
+    if (this.tool === 'gate') this.gateKind = (this.gateKind + 1) % this.gateKinds().length;
+    else this.turn = (this.turn + 1) % 4;
+  }
+
+  /** Can the tool in hand be turned (or, for gates, switched to another kind)? */
+  get turns(): boolean {
+    return this.tool === 'shed' || this.tool === 'spindle' || this.tool === 'trough' || this.tool === 'flap' || this.tool === 'rack' || (this.tool === 'gate' && this.gateKinds().length > 1);
   }
 
   /** Lay the race drawn so far, if it is long enough. */
@@ -80,6 +113,14 @@ export class Builder {
         return `SPINDLE HUT: TURNS FLEECE INTO YARN${touch ? '' : ' - R TURNS'}`;
       case 'hurdle':
         return this.hurdleFrom ? `${tap} WHERE THE HURDLE ENDS` : `HURDLE: ${tap} TWO ENDS OF A FENCE`;
+      case 'gate': {
+        const k = this.gateSpec;
+        const what = k.mode === 'hand' ? 'GAFOOP OPENS IT' : k.mode === 'timer' ? 'OPENS 30 S IN EVERY 150' : 'OPENS WHEN THE FIELD BEHIND THE ARROW IS GRAZED';
+        const more = this.gateKinds().length > 1 ? (touch ? ' - KIND CHANGES IT' : ' - R CHANGES IT') : '';
+        return this.hurdleFrom ? `${tap} THE OTHER END (UP TO 4.5 M)` : `${k.label}: ${what}${more}`;
+      }
+      case 'trough':
+        return `TROUGH: SHEEP COME TO IT WHILE IT HAS FEED. FILL IT WITH THE BUCKET`;
       case 'remove':
         return `REMOVE: ${tap} ON SOMETHING TO TAKE IT DOWN`;
     }
@@ -113,6 +154,29 @@ export class Builder {
 
   private grid(p: Pt, step = 1): Pt {
     return { x: Math.round(p.x / step) * step, y: Math.round(p.y / step) * step };
+  }
+
+  /** A fence end: onto the end of a hurdle or gate nearby, so fences join up; else the grid. */
+  private fenceEnd(p: Pt): Pt {
+    let best: Pt | null = null;
+    let bd = 1.2;
+    for (const d of this.works.devices) {
+      if (d.kind !== 'hurdle' && d.kind !== 'gate') continue;
+      for (const q of [d.a, d.b]) {
+        const dd = Math.hypot(q.x - p.x, q.y - p.y);
+        if (dd < bd) { bd = dd; best = q; }
+      }
+    }
+    return best ?? this.grid(p);
+  }
+
+  /** Where a gate started at `from` would end for the pointer at p: no longer than GATE_MAX. */
+  private gateEnd(from: Pt, p: Pt): Pt {
+    const q = this.fenceEnd(p);
+    const l = Math.hypot(q.x - from.x, q.y - from.y);
+    if (l <= GATE_MAX) return q;
+    const k = GATE_MAX / l;
+    return this.grid({ x: from.x + (q.x - from.x) * k, y: from.y + (q.y - from.y) * k }, 0.5);
   }
 
   /** The nearest point on any race to p, with the race's heading there. */
@@ -155,6 +219,8 @@ export class Builder {
       }
       case 'lick':
         return { kind: 'lick', at: this.grid(p, 0.5) };
+      case 'trough':
+        return { kind: 'trough', at: this.grid(p, 0.5), angle: this.turn % 2 ? Math.PI / 2 : 0 };
       case 'chimes':
         return { kind: 'chimes', at: this.grid(p, 0.5) };
       case 'shed':
@@ -201,12 +267,25 @@ export class Builder {
         return;
       }
       case 'hurdle': {
-        const q = this.grid(p);
+        const q = this.fenceEnd(p);
         if (!this.hurdleFrom) this.hurdleFrom = q;
         else {
           if (Math.hypot(q.x - this.hurdleFrom.x, q.y - this.hurdleFrom.y) >= 1) this.works.add({ kind: 'hurdle', a: this.hurdleFrom, b: q });
           this.hurdleFrom = null;
         }
+        return;
+      }
+      case 'gate': {
+        if (!this.hurdleFrom) {
+          this.hurdleFrom = this.fenceEnd(p);
+          return;
+        }
+        const q = this.gateEnd(this.hurdleFrom, p);
+        if (Math.hypot(q.x - this.hurdleFrom.x, q.y - this.hurdleFrom.y) >= 1.2) {
+          const k = this.gateSpec;
+          this.works.add({ kind: 'gate', a: this.hurdleFrom, b: q, mode: k.mode, ...(k.flip ? { flip: true } : {}) });
+        }
+        this.hurdleFrom = null;
         return;
       }
       case 'remove': {
@@ -242,8 +321,26 @@ export class Builder {
     }
     if (!p) return null;
     if (this.tool === 'hurdle') {
-      const q = this.grid(p);
+      const q = this.fenceEnd(p);
       g.lines.push(this.hurdleFrom ? [this.hurdleFrom, q] : square(q, 0.3));
+      return g;
+    }
+    if (this.tool === 'gate') {
+      const k = this.gateSpec;
+      if (!this.hurdleFrom) {
+        g.lines.push(square(this.fenceEnd(p), 0.3));
+        g.label = { at: p, text: k.label };
+        return g;
+      }
+      const q = this.gateEnd(this.hurdleFrom, p);
+      g.lines.push([this.hurdleFrom, q]);
+      if (k.mode === 'grass') {
+        // the arrow: from the field it watches, through the gate, to the fresh grass
+        const w = gateWatch({ kind: 'gate', id: 0, a: this.hurdleFrom, b: q, mode: 'grass', flip: k.flip } as Gate, 2.2);
+        const m = { x: (this.hurdleFrom.x + q.x) / 2, y: (this.hurdleFrom.y + q.y) / 2 };
+        g.arrows.push([w.at, { x: m.x + w.toward.x * 2.2, y: m.y + w.toward.y * 2.2 }]);
+      }
+      g.label = { at: q, text: k.label };
       return g;
     }
     if (this.tool === 'remove') {
@@ -251,8 +348,9 @@ export class Builder {
       if (!d) return null;
       g.colour = C.scarlet;
       for (const o of deviceObstacles(d)) g.lines.push([{ x: o.ax, y: o.ay }, { x: o.bx, y: o.by }]);
-      if (d.kind === 'lick' || d.kind === 'chimes' || d.kind === 'rack') g.lines.push(square(d.kind === 'rack' ? d.at : d.at, 0.6));
-      g.label = { at: d.kind === 'lane' ? d.points[0] : d.kind === 'hurdle' ? d.a : d.at, text: `REMOVE ${d.kind.toUpperCase()}` };
+      if (d.kind === 'lick' || d.kind === 'chimes' || d.kind === 'rack' || d.kind === 'trough') g.lines.push(square(d.at, 0.8));
+      if (d.kind === 'gate') g.lines.push([d.a, d.b]);
+      g.label = { at: d.kind === 'lane' ? d.points[0] : d.kind === 'hurdle' || d.kind === 'gate' ? d.a : d.at, text: `REMOVE ${d.kind.toUpperCase()}` };
       return g;
     }
     const spec = this.wouldPlace(p);
@@ -283,6 +381,16 @@ export class Builder {
         g.arrows.push([back, { x: front.x + (front.x - back.x) / STATION_LEN, y: front.y + (front.y - back.y) / STATION_LEN }]);
         g.label = { at: spec.at, text: spec.kind === 'shed' ? 'SHEARING SHED' : 'SPINDLE HUT' };
         g.marks = this.levelPorts();
+        return g;
+      }
+      case 'trough': {
+        const ux = Math.cos(spec.angle) * 1;
+        const uy = Math.sin(spec.angle) * 1;
+        const vx = -uy * 0.35;
+        const vy = ux * 0.35;
+        const at = spec.at;
+        g.lines.push([{ x: at.x - ux - vx, y: at.y - uy - vy }, { x: at.x + ux - vx, y: at.y + uy - vy }, { x: at.x + ux + vx, y: at.y + uy + vy }, { x: at.x - ux + vx, y: at.y - uy + vy }, { x: at.x - ux - vx, y: at.y - uy - vy }]);
+        g.label = { at, text: 'TROUGH' };
         return g;
       }
       default: {

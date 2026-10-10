@@ -19,6 +19,7 @@ import { PixelRenderer } from './engine/pixelRenderer';
  *
  *   ?game      skip the intro and go straight to herding
  *   ?manual    (with ?game) no animation loop; tooling drives frames through window.__game
+ *   ?fresh     start a new valley, ignoring the saved one (the saved one is overwritten)
  *   ?t=42      start the intro at 42 s (development)
  *   ?nosubs    hide subtitles
  *   ?capture   offline frame/audio rendering API on window.__autosheep
@@ -297,8 +298,8 @@ function prepareGame(fonts: Fonts): Promise<Game> {
     // Behind the menu the game is built on the menu's own WebGL renderer and draws nothing to
     // the screen; starting it just hands it the canvas. (It used to have a hidden canvas and a
     // WebGL context of its own, which phones can take away while it waits.)
-    const game = await loader.step('game: building the level', () => {
-      const g = new Game(player ? player.pr.renderer : canvas, fonts, Number(params.get('level') ?? 1));
+    const game = await loader.step('game: building the valley', () => {
+      const g = new Game(player ? player.pr.renderer : canvas, fonts, { fresh: params.has('fresh') });
       if (player) g.pr.offscreen = true;
       else fitGame(g)();
       return g;
@@ -325,6 +326,11 @@ function fitGame(game: Game): () => void {
 async function startGame(fonts: Fonts, ctx: AudioContext | null, ready?: () => void): Promise<void> {
   const game = await prepareGame(fonts);
   ready?.();
+  // the valley saves itself every little while, and whenever the page is put away
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) game.save();
+  });
+  window.addEventListener('pagehide', () => game.save());
   // the intro's loops have stopped; the game takes over its canvas
   if (player) {
     if (introFit) window.removeEventListener('resize', introFit);

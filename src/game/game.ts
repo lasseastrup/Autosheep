@@ -12,41 +12,49 @@ import { GafoopActor } from './gafoopActor';
 import { GameAudio } from './gameAudio';
 import { buttonAt, drawHud, H, hudButtons, W, type ButtonId, type HudState } from './hud';
 import { PerfTest, type Variant } from './perfTest';
-import { allObstacles, buildScenery, fenceMeshes, GateMesh, levelObstacles, WORLD, type LevelObstacles } from './level';
-import { levelById, LEVELS, type LevelSpec } from './levels';
+import { allObstacles, buildScenery, levelObstacles, WORLD, type LevelObstacles } from './level';
+import { FORMS, goalLabel, type FormSpec, type Unlock } from './forms';
+import { buildRotation, inRect, VALLEY } from './valley';
+import { base64ToBytes, bytesToBase64, clearSnapshot, loadSnapshot, storeSnapshot, type Snapshot } from './save';
 import { Works } from '../works/works';
 import { WorksView } from './worksView';
 import { Builder, pixelLine } from './build';
 import { FlowField } from './flowOverlay';
 import { TOOLS, type HudLayout, type ToolId } from './hud';
-import type { Pt } from '../works/devices';
+import type { Device, GateMode, Pt } from '../works/devices';
+import { WORKS } from '../works/works';
 import { GrassField } from '../sim/grass';
 import { GrassView } from '../art/grass';
 import { coverWithWorks, meadowCap } from './meadowGrass';
 
 /**
- * Gafoop is always a threat, and only his proximity (and how fast he closes in) decides how
- * much: there is no button for scaring. While he rattles the bucket he is mostly forgiven.
- * A later unlock could let him fly in stealth, counting for nothing at all.
+ * Gafoop is harmless until the Woof-Woof (M2b): the sheep ignore him, and he leads them with
+ * the feed bucket. While the speaker sounds he is a threat by proximity alone, like a dog, and
+ * each press starts with a bark (a startle).
  */
-const PRESENCE = { strength: 0.85, radius: 9 };
-const WITH_BUCKET = { strength: 0.25, radius: 6 };
+const WOOF = { strength: 0.95, radius: 10 };
+const BARK = { strength: 1.3, radius: 12 };
 const BUCKET = { strength: 1.0, radius: 14 };
-const HONK = { strength: 1.6, radius: 14, cooldown: 4 };
+/** jobs by hand: seconds to shear a sheep or spin a fleece, and how near the sheep must be */
+const HAND = { shear: 1.6, spin: 2.4, reach: 2.4 };
+/** a hand gate this near Gafoop is his to open and shut */
+const GATE_REACH = 6;
+/** the bucket fills a trough this near at `rate` a second */
+const FILL = { reach: 2.6, rate: 0.35 };
+/** "unattended": nothing done by hand (bucket, woof, gate) for this long */
+const HANDS_OFF = 20;
 
 const QUIPS = {
   start: [''],
-  honk: ['ATTENTION, LIVESTOCK!', 'THIS IS YOUR GENERAL SPEAKING!', 'FORM AN ORDERLY QUEUE!', 'THAT WAS NOT A SUGGESTION!'],
+  woof: ['WOOF! WOOF! (Translation: move.)', 'I AM A DOG NOW. FEAR ME.', 'BARK. BARK, I SAY.'],
   bucket: ['Who wants a pellet? You do. Yes you do.', 'Delicious regulation feed! Twelve percent grit!'],
   scatter: ['No, no, the OTHER way!', 'Stop panicking! I am a very calm alien!', 'Why are they like this?', 'Sheep. Of course it had to be sheep.'],
-  half: ['Halfway! The Hegemony will be thrilled. Moderately.'],
-  allInOpen: ['Everyone is in! Somebody shut the gate! (G)'],
   gateOpen: ['Gate: open.'],
   gateShut: ['Gate: secured. Mostly.'],
-  win: ['Form 77-B, here I come!'],
+  approved: ['Approved! In triplicate!', 'Another stamp! The Hegemony trembles. Slightly.'],
   firstYarn: ['Yarn! Actual yarn! Somebody frame it.'],
-  halfYarn: ['Fifteen skeins. The Auditor has stopped yawning. Slightly.'],
-  winYarn: ['Industry, proven! In triplicate!'],
+  notWoolly: ['That one is bald. Give it a while. And some grass.'],
+  saved: [''],
 };
 
 export interface GameInput {
@@ -78,40 +86,54 @@ export class Game {
   private readonly sun = new THREE.DirectionalLight(0xffffff, 0.92);
   private readonly hemi = new THREE.HemisphereLight(0xffffff, 0x88aa88, 0.5);
   private readonly meadow: LevelObstacles;
-  /** the level being played */
-  spec: LevelSpec = levelById(1);
-  /** the level's own fences and gate */
-  private levelGroup = new THREE.Group();
-  private gate: GateMesh | null = null;
-  /** herdway devices: what the player has built, and what they do to the sheep */
+  /** the Form being worked on (index into FORMS), and what Gafoop has unlocked */
+  formIndex = 0;
+  readonly unlocked = new Set<Unlock>();
+  /** counters at the Form's arrival, so its goal counts from there */
+  private base = { handFleece: 0, yarn: 0 };
+  /** fleeces shorn by hand, skeins made unattended, sheep woofed through a gate (by index) */
+  private handFleece = 0;
+  private unattended = 0;
+  private woofed = new Set<number>();
+  /** the last time Gafoop did something by hand (bucket, woof, a gate) */
+  private handsOn = -99;
+  /** the Woof-Woof is sounding, and a bark is due */
+  private woofing = false;
+  private pendingBark = false;
+  /** a job in hand: shearing sheep `i`, or spinning; seconds into it */
+  private job: { kind: 'shear' | 'spin'; i: number; t: number } | null = null;
+  /** per sheep: last step's position (for counting sheep through gates) */
+  private prevX = new Float32Array(0);
+  private prevY = new Float32Array(0);
+  /** seconds since the valley was last saved */
+  private sinceSave = 0;
+  /** what the works do: everything built in the valley, fences and the pen included */
   readonly works = new Works();
   private readonly worksView: WorksView;
   private readonly blinkers: THREE.Mesh[];
   private model!: FlockModel;
   private flock!: FlockView;
   private gafoop!: GafoopActor;
-  private gateClosed = false;
   private acc = 0;
-  /** seconds since the level started, and the time on the clock */
+  /** seconds since the game started, and the time on the current Form's clock */
   time = 0;
   private clock = 0;
   private started = false;
-  private penned = new Uint8Array(0);
-  private everPenned = new Uint8Array(0);
-  private pennedCount = 0;
+  /** how far the current goal is along, of how many (shown on the clipboard) */
+  private goalCount = 0;
+  private goalTotal = 0;
   private floaters: HudState['floaters'] = [];
-  private honkAt = -99;
-  private pendingHonk = false;
+  /** the current Form's approval card */
   private won: { time: number; at: number; dismissed?: boolean } | null = null;
   private showHelp = false;
-  private flockSize = 30;
+  private flockSize = VALLEY.flock;
   private attempt = 1;
   private said = new Set<string>();
   private lastScatterQuip = -99;
   private quipIndex = 0;
   audio: GameAudio | null = null;
   readonly input: GameInput = { pointer: null, bucket: false, feed: false, keys: new Set(), hits: [], wheel: 0, taps: [], drag: { dx: 0, dy: 0 } };
-  /** build mode (herdway levels): the pointer places devices; Gafoop waits */
+  /** build mode (once unlocked): the pointer places devices; Gafoop waits */
   building = false;
   readonly builder: Builder;
   private showFlow = false;
@@ -141,7 +163,8 @@ export class Game {
   onFrame: (() => void) | null = null;
 
   /** @param target  a canvas, or the renderer of the menu this game is prepared behind */
-  constructor(target: HTMLCanvasElement | THREE.WebGLRenderer, private readonly fonts: Fonts, level = 1) {
+  /** `fresh`: ignore any saved valley and start a new one. */
+  constructor(target: HTMLCanvasElement | THREE.WebGLRenderer, private readonly fonts: Fonts, opts: { fresh?: boolean } = {}) {
     this.pr = new PixelRenderer(target, W, H);
     this.pr.setPalette(RESURRECT64);
     this.pr.post = { ...this.pr.post, depthAbs: 0.25, depthRel: 0, outline: 0.62, highlight: 0.3, bloom: 1.0, bloomThreshold: 1.3 };
@@ -166,74 +189,270 @@ export class Game {
     this.blinkers = scenery.blinkers;
     this.worksView = new WorksView(this.works);
     s.add(this.worksView.root);
-    this.builder = new Builder(this.works, () => this.spec.ports ?? []);
-    this.load(level);
-  }
-
-  /** Set up level `id` from scratch. */
-  load(id: number): void {
-    const spec = levelById(id);
-    this.spec = spec;
-    this.scene.remove(this.levelGroup);
-    this.levelGroup = new THREE.Group();
-    if (spec.fences.length) this.levelGroup.add(fenceMeshes(spec.fences));
-    this.gate = null;
-    if (spec.gate) {
-      this.gate = new GateMesh(spec.gate);
-      this.gate.root.traverse((o) => { o.castShadow = true; });
-      this.levelGroup.add(this.gate.root);
+    this.builder = new Builder(this.works, () => [], () => this.gateModes());
+    const saved = opts.fresh ? null : loadSnapshot();
+    if (saved) {
+      try {
+        this.restore(saved);
+      } catch {
+        // a save this version cannot read: start over rather than not start at all
+        this.newValley();
+      }
+    } else {
+      this.newValley();
     }
-    this.scene.add(this.levelGroup);
-    this.attempt = 1;
-    this.reset(spec.flock);
   }
 
-  /** Is there a level after this one? */
-  get hasNext(): boolean {
-    return LEVELS.some((l) => l.id === this.spec.id + 1);
+  /** The current Form. */
+  get form(): FormSpec {
+    return FORMS[Math.min(this.formIndex, FORMS.length - 1)];
   }
 
-  /** (Re)start the level with a flock of `n` sheep. */
-  reset(n: number): void {
-    this.flockSize = n;
-    if (this.flock) this.scene.remove(this.flock.root);
-    if (this.gafoop) this.scene.remove(this.gafoop.root, ...this.gafoop.effects);
-    const spec = this.spec;
-    this.model = new SheepherdingV1();
-    this.model.init({ seed: this.attempt, width: WORLD.width, height: WORLD.height, sheep: cluster(n, spec.flockAt.x, spec.flockAt.y, this.attempt, 1.3) });
-    // every attempt starts on a meadow nobody has grazed
+  private has(u: Unlock): boolean {
+    return this.unlocked.has(u);
+  }
+
+  private gateModes(): GateMode[] {
+    const out: GateMode[] = ['hand'];
+    if (this.has('timerGate')) out.push('timer');
+    if (this.has('grassGate')) out.push('grass');
+    return out;
+  }
+
+  /** The tools on the toolbar: what has been unlocked. */
+  private tools(): ToolId[] {
+    return TOOLS.filter((t) => {
+      if (t === 'remove') return this.has('build');
+      if (t === 'shed' || t === 'spindle') return this.has('stations');
+      return this.has(t as Unlock);
+    });
+  }
+
+  /** A new valley: the meadow, the flock where it grazes, and Form 8-A on its way. */
+  newValley(): void {
+    this.works.clear();
+    this.unlocked.clear();
+    this.handFleece = this.unattended = 0;
+    this.woofed.clear();
+    this.makeFlock(cluster(this.flockSize, VALLEY.flockAt.x, VALLEY.flockAt.y, this.attempt, 1.3));
     this.grass.cap.set(this.grassBase);
     this.grass.length.set(this.grassBase);
     this.grass.version++;
-    this.grassDevices = '-';
+    this.placeGafoop(VALLEY.gafoopAt);
+    this.time = 0;
+    this.startForm(0, false);
+  }
+
+  /** The flock behind the contract, from where each sheep stands (and how hungry it is). */
+  private makeFlock(sheep: { x: number; y: number; heading?: number; hunger?: number }[]): void {
+    const n = sheep.length;
+    this.flockSize = n;
+    if (this.flock) this.scene.remove(this.flock.root);
+    this.model = new SheepherdingV1();
+    this.model.init({ seed: this.attempt, width: WORLD.width, height: WORLD.height, sheep });
     this.model.setGrass(this.grass);
-    this.gateClosed = false;
-    if (this.gate) this.gate.open = 1;
-    this.works.clear();
-    spec.works?.(this.works);
     this.works.setFlock(n);
-    this.worksVersion = -1;
-    this.building = false;
-    this.builder.cancel();
-    this.flowField.clear();
-    this.speed = 1;
-    this.syncObstacles();
+    this.prevX = Float32Array.from(this.model.out.x.subarray(0, n));
+    this.prevY = Float32Array.from(this.model.out.y.subarray(0, n));
     this.flock = new FlockView(n, this.attempt);
     this.scene.add(this.flock.root);
-    this.gafoop = new GafoopActor(spec.gafoopAt.x, spec.gafoopAt.y);
-    this.scene.add(this.gafoop.root, ...this.gafoop.effects);
-    this.cam.jump(new THREE.Vector3((spec.gafoopAt.x + spec.flockAt.x) / 2 + 4, 0, (spec.gafoopAt.y + spec.flockAt.y) / 2));
-    this.penned = new Uint8Array(n);
-    this.everPenned = new Uint8Array(n);
-    this.pennedCount = 0;
-    this.floaters = [];
-    this.won = null;
-    this.time = 0;
-    this.clock = 0;
-    this.acc = 0;
-    this.said.clear();
-    this.honkAt = -99;
     this.flock.capture(this.model.out);
+    this.grassDevices = '-';
+    this.worksVersion = -1;
+    this.syncObstacles();
+  }
+
+  private placeGafoop(at: Pt): void {
+    if (this.gafoop) this.scene.remove(this.gafoop.root, ...this.gafoop.effects);
+    this.gafoop = new GafoopActor(at.x, at.y);
+    this.scene.add(this.gafoop.root, ...this.gafoop.effects);
+    this.cam.jump(new THREE.Vector3(at.x + 4, 0, at.y));
+  }
+
+  /** Form `i` arrives: its supply drop, its tools, and its goal counting from now. */
+  private startForm(i: number, speak = true): void {
+    this.formIndex = Math.min(i, FORMS.length - 1);
+    const f = this.form;
+    f.drop?.(this.works);
+    for (const u of f.grants ?? []) this.unlocked.add(u);
+    this.base = { handFleece: this.handFleece, yarn: this.works.yarn };
+    this.woofed.clear();
+    this.unattended = 0;
+    this.goalCount = 0;
+    this.won = null;
+    this.clock = 0;
+    this.said.clear();
+    this.building = false;
+    this.builder.cancel();
+    if (speak && this.started) this.quip('start', 0.6, false);
+    this.syncObstacles();
+    this.save();
+  }
+
+  /** The current Form is done: stamp it, and unlock what it brings. */
+  private approve(): void {
+    if (this.won) return;
+    this.won = { time: this.clock, at: this.time };
+    for (const u of this.form.unlocks ?? []) this.unlocked.add(u);
+    this.audio?.win();
+    this.quip('approved', 0.4, false);
+    this.save();
+  }
+
+  /** On to the next Form (the approval card's NEXT). */
+  private nextForm(): void {
+    if (this.formIndex < FORMS.length - 1) this.startForm(this.formIndex + 1);
+  }
+
+  /** Everything that persists, for the browser's storage. */
+  snapshot(): Snapshot {
+    const o = this.model.out;
+    const w = this.works;
+    const sheep = [];
+    for (let i = 0; i < o.count; i++) {
+      sheep.push({ x: o.x[i], y: o.y[i], heading: o.heading[i], hunger: o.hunger[i], wool: w.wool[i] ?? 1, pack: w.pack[i] ?? 0 });
+    }
+    const g = new Uint8Array(this.grass.length.length);
+    for (let k = 0; k < g.length; k++) g[k] = Math.round(Math.min(1, this.grass.length[k]) * 255);
+    return {
+      v: 1,
+      form: this.formIndex,
+      approved: !!this.won,
+      unlocked: [...this.unlocked],
+      base: { ...this.base },
+      handFleece: this.handFleece,
+      unattended: this.unattended,
+      woofed: [...this.woofed],
+      clock: this.clock,
+      time: this.time,
+      gafoop: { x: this.gafoop.pos.x, y: this.gafoop.pos.z },
+      sheep,
+      devices: w.devices.map((d) => JSON.parse(JSON.stringify(d)) as Device),
+      gates: [...w.gates].map(([id, st]) => [id, st.open, st.armed]),
+      feed: [...w.feed],
+      works: { yarn: w.yarn, fleece: w.fleece, shorn: w.shorn, autoYarn: w.autoYarn, stock: { ...w.stock }, clock: w.clock },
+      grass: bytesToBase64(g),
+    };
+  }
+
+  /** Put a saved valley back. */
+  restore(s: Snapshot): void {
+    const w = this.works;
+    w.clear();
+    for (const d of s.devices) w.add(d);
+    for (const [id, open, armed] of s.gates) {
+      const st = w.gates.get(id);
+      if (st) { st.open = open; st.armed = armed; }
+    }
+    for (const [id, f] of s.feed) if (w.feed.has(id)) w.feed.set(id, f);
+    Object.assign(w, { yarn: s.works.yarn, fleece: s.works.fleece, shorn: s.works.shorn, autoYarn: s.works.autoYarn });
+    w.stock.fleece = s.works.stock.fleece;
+    w.stock.yarn = s.works.stock.yarn;
+    w.clock = s.works.clock;
+    w.version++;
+    this.unlocked.clear();
+    for (const u of s.unlocked) this.unlocked.add(u);
+    this.formIndex = Math.min(s.form, FORMS.length - 1);
+    this.base = { ...s.base };
+    this.handFleece = s.handFleece;
+    this.unattended = s.unattended;
+    this.woofed = new Set(s.woofed);
+    this.clock = s.clock;
+    this.time = s.time;
+    const g = base64ToBytes(s.grass);
+    if (g.length === this.grass.length.length) for (let k = 0; k < g.length; k++) this.grass.length[k] = g[k] / 255;
+    this.grass.version++;
+    this.makeFlock(s.sheep.map((p) => ({ x: p.x, y: p.y, heading: p.heading, hunger: p.hunger })));
+    s.sheep.forEach((p, i) => {
+      w.wool[i] = p.wool;
+      w.pack[i] = p.pack;
+    });
+    this.placeGafoop(s.gafoop);
+    this.won = s.approved ? { time: s.clock, at: -99, dismissed: true } : null;
+  }
+
+  /** Save the valley now (it also saves itself every little while). */
+  save(): void {
+    if (!this.model) return;
+    this.sinceSave = 0;
+    storeSnapshot(this.snapshot());
+  }
+
+  /** The cheat row's NEW VALLEY: forget the save and start again. */
+  resetValley(): void {
+    clearSnapshot();
+    this.newValley();
+    if (this.started) this.quip('start', 0.6, false);
+  }
+
+  /** when NEW VALLEY was tapped once (a second tap soon after starts again) */
+  private resetArmed = -99;
+  /** when the Woof-Woof last sounded (sheep it set running still count for a moment after) */
+  private lastWoof = -99;
+
+  /** The bucket pours into any trough it is held over. */
+  private fillTroughs(dt: number): void {
+    const p = this.gafoop.pos;
+    for (const d of this.works.devices) {
+      if (d.kind !== 'trough') continue;
+      if (Math.hypot(d.at.x - p.x, d.at.y - p.z) < FILL.reach) this.works.fill(d.id, FILL.rate * dt);
+    }
+  }
+
+  /** The sheep Gafoop would shear: the nearest woolly one standing within reach. */
+  private shearable(): number {
+    const o = this.model.out;
+    const p = this.gafoop.pos;
+    let best = -1;
+    let bd = HAND.reach;
+    for (let i = 0; i < o.count; i++) {
+      if (this.works.wool[i] < WORKS.woolly || o.speed[i] > 0.45) continue;
+      const d = Math.hypot(o.x[i] - p.x, o.y[i] - p.z);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  /** Shearing and spinning by hand, while SHEAR (X) or SPIN (C) is held. */
+  private handJobs(dt: number, inp: GameInput): void {
+    const shear = this.has('shears') && (inp.keys.has('x') || this.held.has('shear'));
+    const spin = this.has('spin') && this.works.stock.fleece > 0 && (inp.keys.has('c') || this.held.has('spin'));
+    if (shear) {
+      const i = this.shearable();
+      if (i < 0) {
+        this.job = null;
+        return;
+      }
+      if (!this.job || this.job.kind !== 'shear' || this.job.i !== i) this.job = { kind: 'shear', i, t: 0 };
+      this.job.t += dt;
+      if (this.job.t >= HAND.shear) {
+        this.works.wool[i] = 0;
+        this.works.stock.fleece++;
+        this.handFleece++;
+        this.floatAt(this.model.out.x[i], this.model.out.y[i], '+1 FLEECE');
+        this.audio?.penned();
+        this.job = null;
+      }
+    } else if (spin) {
+      if (!this.job || this.job.kind !== 'spin') this.job = { kind: 'spin', i: -1, t: 0 };
+      this.job.t += dt;
+      if (this.job.t >= HAND.spin) {
+        this.works.stock.fleece--;
+        this.works.stock.yarn++;
+        this.works.yarn++;
+        this.floatAt(this.gafoop.pos.x, this.gafoop.pos.z, '+1 YARN');
+        this.audio?.penned();
+        this.quip('firstYarn', 0.3);
+        this.job = null;
+      }
+    } else {
+      this.job = null;
+    }
+  }
+
+  private floatAt(x: number, y: number, text: string): void {
+    const sp = this.cam.toScreen(new THREE.Vector3(x, 1.4, y));
+    this.floaters.push({ text, x: sp.x, y: sp.y, age: 0 });
   }
 
   /** works.version when the model last had its fences */
@@ -241,16 +460,16 @@ export class Game {
   /** the devices the grass was last cleared for (their ids) */
   private grassDevices = '';
 
-  /** Hand the model every fence there is: the meadow's, the level's, the gate, the works. */
+  /** Hand the model every fence there is: the meadow's and the works' (gates as they stand). */
   private syncObstacles(): void {
-    const obs: Obstacle[] = [...allObstacles(this.meadow), ...this.spec.fences, ...this.works.obstacles()];
+    if (!this.model) return;
+    const obs: Obstacle[] = [...allObstacles(this.meadow), ...this.works.obstacles()];
     // race and station floors are bare
     const key = this.works.devices.map((d) => d.id).join(',');
     if (key !== this.grassDevices) {
       coverWithWorks(this.grass, this.grassBase, this.works.devices);
       this.grassDevices = key;
     }
-    if (this.spec.gate && this.gateClosed) obs.push(this.spec.gate);
     this.model.setObstacles(obs);
     this.worksVersion = this.works.version;
   }
@@ -272,30 +491,45 @@ export class Game {
   private quip(kind: keyof typeof QUIPS, delay = 0, once = true): void {
     if (once && this.said.has(kind)) return;
     this.said.add(kind);
-    const list = kind === 'start' ? [this.spec.opening] : QUIPS[kind];
+    const list = kind === 'start' ? [this.form.opening] : QUIPS[kind];
     const text = list[this.quipIndex++ % list.length];
     this.gafoop.say(text, this.time + delay, kind === 'start' ? 4.2 : 2.8);
   }
 
+  /** The hand gate nearest Gafoop, if one is within reach. */
+  private nearGate(): number | null {
+    const p = this.gafoop.pos;
+    let best: number | null = null;
+    let bd = GATE_REACH;
+    for (const d of this.works.devices) {
+      if (d.kind !== 'gate' || d.mode !== 'hand') continue;
+      const dd = Math.hypot((d.a.x + d.b.x) / 2 - p.x, (d.a.y + d.b.y) / 2 - p.z);
+      if (dd < bd) { bd = dd; best = d.id; }
+    }
+    return best;
+  }
+
   private toggleGate(): void {
-    if (!this.gate) return;
-    this.gateClosed = !this.gateClosed;
-    this.gate.open = this.gateClosed ? 0 : 1;
+    const id = this.nearGate();
+    if (id === null) return;
+    const open = !this.works.gates.get(id)?.open;
+    this.works.setGate(id, open);
+    this.handsOn = this.time;
     this.syncObstacles();
-    this.audio?.gate(!this.gateClosed);
-    if (this.pennedCount < this.flockSize) this.quip(this.gateClosed ? 'gateShut' : 'gateOpen', 0, false);
+    this.audio?.gate(open);
+    this.quip(open ? 'gateOpen' : 'gateShut', 0, false);
   }
 
   private stimuli(): Stimulus[] {
     const g = this.gafoop;
     const p = g.pos;
     const out: Stimulus[] = [];
-    const t = g.tool === 'bucket' ? WITH_BUCKET : PRESENCE;
-    out.push({ id: 1, kind: 'threat', x: p.x, y: p.z, strength: t.strength, radius: t.radius });
+    // harmless, unless the Woof-Woof is sounding
+    if (this.woofing) out.push({ id: 1, kind: 'threat', x: p.x, y: p.z, strength: WOOF.strength, radius: WOOF.radius });
     if (g.tool === 'bucket') out.push({ id: 2, kind: 'lure', x: p.x, y: p.z, strength: BUCKET.strength, radius: BUCKET.radius });
-    if (this.pendingHonk) {
-      out.push({ id: 3, kind: 'startle', x: p.x, y: p.z, strength: HONK.strength, radius: HONK.radius });
-      this.pendingHonk = false;
+    if (this.pendingBark) {
+      out.push({ id: 3, kind: 'startle', x: p.x, y: p.z, strength: BARK.strength, radius: BARK.radius });
+      this.pendingBark = false;
     }
     return out.concat(this.works.stimuli());
   }
@@ -353,7 +587,24 @@ export class Game {
     if (g.tool === 'bucket') {
       this.audio?.rattle();
       this.quip('bucket');
+      this.handsOn = this.time;
+      this.fillTroughs(dt);
     }
+    // the Woof-Woof: held down, it sounds; each press starts with a bark
+    const woof = this.started && !this.building && this.has('woof') && (inp.keys.has(' ') || this.held.has('woof'));
+    if (woof && !this.woofing) {
+      this.pendingBark = true;
+      this.audio?.megaphone();
+      this.gafoop.megaphone(this.time);
+      if (Math.random() < 0.35) this.quip('woof', 0, false);
+    }
+    this.woofing = woof;
+    if (woof) {
+      this.handsOn = this.time;
+      this.lastWoof = this.time;
+    }
+    if (this.started && !this.building) this.handJobs(dt, inp);
+    else this.job = null;
     g.update(target, dt, this.time, { w: WORLD.width, h: WORLD.height });
     if (this.started && !this.building) this.cam.follow(this.framing(), 0.16);
 
@@ -366,7 +617,8 @@ export class Game {
         this.model.step(this.stimuli());
         this.grass.grow(step);
         this.acc -= step;
-        this.works.update(this.model.out, step);
+        this.works.updateWoolRate(this.model.out, step);
+        this.works.update(this.model.out, step, this.grass);
         if (this.works.version !== this.worksVersion) this.syncObstacles();
         this.flowField.sample(this.model.out, step);
         this.afterStep();
@@ -375,12 +627,13 @@ export class Game {
     this.flock.update(this.model.out, this.started ? this.acc / this.model.dt : 1, this.time, sdt, g.pos, this.works);
     this.worksView.update(sdt, this.time);
     this.wall += dt;
+    this.sinceSave += dt;
+    if (this.started && this.sinceSave > 20) this.save();
     const fwd = this.cam.camera.getWorldDirection(this.tmpFwd);
     this.grassView.fitTo(this.cam.pixelsPerMetre, this.cam.pitch, fwd.x, fwd.z);
     this.grassView.update(dt, this.wall);
     for (const f of this.floaters) f.age += dt;
     this.floaters = this.floaters.filter((f) => f.age < 1.2);
-    this.gate?.update(dt);
     this.playBleats();
     for (const [i, b] of this.blinkers.entries()) b.visible = Math.floor(this.time * 1.5 + i * 0.5) % 2 === 0;
 
@@ -469,11 +722,27 @@ export class Game {
       if (toward.length() > 12) toward.setLength(12);
       out.addScaledVector(toward, 0.75);
     }
-    // near the pen (or the works), bring it into the picture too
-    const pen = new THREE.Vector3(this.spec.focus.x, 0, this.spec.focus.y);
-    const d = pen.distanceTo(p);
+    // near what the Form is about (the pen, the works), bring it into the picture too
+    const f = this.focus();
+    if (!f) return out;
+    const at = new THREE.Vector3(f.at.x, 0, f.at.y);
+    const d = at.distanceTo(p);
     const k = Math.max(0, Math.min(1, (26 - d) / 12)) * 0.45;
-    return out.lerp(pen, k);
+    return out.lerp(at, k);
+  }
+
+  /** What the current Form is about, for the camera and the pointer: the pen, or the works. */
+  private focus(): { at: Pt; label: string } | null {
+    const g = this.form.goal.kind;
+    if (g === 'pen') {
+      const P = VALLEY.pen;
+      return { at: { x: (P.x0 + P.x1) / 2, y: (P.y0 + P.y1) / 2 }, label: 'PEN' };
+    }
+    if (g === 'yarn' || g === 'unattended') {
+      const st = this.works.stations[0]?.device.at;
+      if (st) return { at: st, label: 'WORKS' };
+    }
+    return null;
   }
 
   /** Which on-screen button, if any, is at this overlay position. */
@@ -485,18 +754,26 @@ export class Game {
   /** What the HUD's layout depends on right now. */
   private layout(): HudLayout {
     const won = this.won && !this.won.dismissed ? { age: this.time - this.won.at, buttons: this.wonButtons() } : null;
+    const free = this.started && !this.building;
     return {
       touch: this.touch,
       won,
       perf: this.showPerf,
-      kind: this.spec.kind,
-      build: this.building ? { tool: this.builder.tool, drawing: this.builder.drawing } : null,
+      can: {
+        build: this.has('build'),
+        woof: this.has('woof'),
+        gate: free && this.nearGate() !== null,
+        shear: free && this.has('shears') && (this.job?.kind === 'shear' || this.shearable() >= 0),
+        spin: free && this.has('spin') && this.works.stock.fleece > 0,
+        solve: this.form.solve !== 'none',
+      },
+      tools: this.tools(),
+      build: this.building ? { tool: this.builder.tool, drawing: this.builder.drawing, turns: this.builder.turns } : null,
     };
   }
 
   private wonButtons(): ButtonId[] {
-    if (this.spec.kind === 'herdway') return this.hasNext ? ['again', 'next', 'keep'] : ['again', 'keep'];
-    return this.hasNext ? ['again', 'bigger', 'next'] : ['again', 'bigger'];
+    return this.formIndex < FORMS.length - 1 ? ['next', 'keep'] : ['keep'];
   }
 
   /** A button pressed: it does what its key does. FEED acts while held. */
@@ -506,13 +783,16 @@ export class Game {
     switch (id) {
       case 'feed': inp.feed = true; break;
       case 'gate': inp.hits.push('g'); break;
-      case 'honk': inp.hits.push(' '); break;
+      case 'woof':
+      case 'shear':
+      case 'spin':
+        // held: the frame reads them from `held`
+        break;
+      case 'reset': inp.hits.push('reset'); break;
       case 'rotL': inp.hits.push('q'); break;
       case 'rotR': inp.hits.push('e'); break;
       case 'zoomIn': inp.wheel -= 1; break;
       case 'zoomOut': inp.wheel += 1; break;
-      case 'again': inp.hits.push('r'); break;
-      case 'bigger': inp.hits.push('n'); break;
       case 'perf': inp.hits.push('f'); break;
       case 'perfTest': inp.hits.push('p'); break;
       case 'skip': inp.hits.push(']'); break;
@@ -543,132 +823,199 @@ export class Game {
       if (k === 'f') this.showPerf = !this.showPerf;
       if (k === 'p') this.startPerfTest();
       if (!this.started) continue;
-      // the cheat: on to the next level, won or not (round to the first after the last)
+      // the cheats: this Form done (or, once done, the next one), its reference setup built, a
+      // new valley
       if (k === ']') {
-        this.load(this.hasNext ? this.spec.id + 1 : LEVELS[0].id);
-        this.quip('start', 0.8, false);
+        if (this.won) this.nextForm();
+        else this.approve();
         continue;
       }
       if (k === '\\') {
         this.solve();
         continue;
       }
+      if (k === 'reset') {
+        // it throws the valley away, so it takes a second tap
+        if (this.time - this.resetArmed < 3) {
+          this.resetArmed = -99;
+          this.resetValley();
+        } else {
+          this.resetArmed = this.time;
+          this.gafoop.say('A new valley? Everything goes. Tap NEW VALLEY again to start over.', this.time, 3);
+        }
+        continue;
+      }
       const card = this.won && !this.won.dismissed;
-      if (this.spec.kind === 'herdway' && !card) {
+      if (card) {
+        if (k === 'l' || k === 'enter') this.nextForm();
+        if (k === 'k' || k === 'escape') this.won = { ...this.won!, dismissed: true };
+        continue;
+      }
+      if (k === 't') this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 4 : 1;
+      if (this.has('build')) {
         if (k === 'b') {
           this.building = !this.building;
           this.builder.cancel();
+          if (this.building && !this.tools().includes(this.builder.tool)) this.builder.setTool(this.tools()[0]);
         }
         if (k === 'o') this.showFlow = !this.showFlow;
-        if (k === 't') this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 4 : 1;
-        if (this.building) {
-          const n = '123456789'.indexOf(k);
-          if (n >= 0 && n < TOOLS.length) this.builder.setTool(TOOLS[n]);
-          if (k === 'x' || k === 'delete' || k === 'backspace') this.builder.setTool('remove');
-          if (k === 'r') this.builder.rotate();
-          if (k === 'enter') this.builder.finish();
-          if (k === 'escape') {
-            if (this.builder.drawing) this.builder.cancel();
-            else this.building = false;
-          }
-          continue;
+      }
+      if (this.building) {
+        const tools = this.tools();
+        const n = '123456789'.indexOf(k);
+        if (n >= 0 && n < tools.length) this.builder.setTool(tools[n]);
+        if (k === 'x' || k === 'delete' || k === 'backspace') this.builder.setTool('remove');
+        if (k === 'r') this.builder.rotate();
+        if (k === 'enter') this.builder.finish();
+        if (k === 'escape') {
+          if (this.builder.drawing) this.builder.cancel();
+          else this.building = false;
         }
+        continue;
       }
-      if (k === 'g' && this.gate) this.toggleGate();
-      if (k === ' ' && this.time - this.honkAt >= HONK.cooldown) {
-        this.honkAt = this.time;
-        this.pendingHonk = true;
-        this.gafoop.megaphone(this.time);
-        this.audio?.megaphone();
-        const list = QUIPS.honk;
-        this.gafoop.say(list[this.quipIndex++ % list.length], this.time, 1.6);
-      }
-      if (card && k === 'r') {
-        this.reset(this.flockSize);
-        this.quip('start', 0.5, false);
-      }
-      if (card && k === 'n' && this.spec.kind === 'pen') {
-        this.attempt++;
-        this.reset(Math.min(120, this.flockSize + 20));
-        this.quip('start', 0.5, false);
-      }
-      if (card && k === 'l' && this.hasNext) {
-        this.load(this.spec.id + 1);
-        this.quip('start', 0.8, false);
-      }
-      // a herdway goes on after the verdict: the card can be put away
-      if (card && k === 'k' && this.spec.kind === 'herdway') this.won = { ...this.won!, dismissed: true };
+      if (k === 'g') this.toggleGate();
     }
   }
 
-  /** The other cheat: whatever has been built gives way to the level's winning layout. */
+  /** The SOLVE cheat: whatever the current Form needs, done or built. */
   private solve(): void {
-    if (!this.spec.solution) return;
-    for (const d of [...this.works.devices]) this.works.remove(d.id);
-    this.spec.works?.(this.works);
-    this.spec.solution(this.works);
+    const how = this.form.solve;
+    if (how === 'pen') {
+      // the flock in the pen, its gate shut
+      const P = VALLEY.pen;
+      this.moveFlock((P.x0 + P.x1) / 2, (P.y0 + P.y1) / 2, 1.0);
+      for (const d of this.works.devices) if (d.kind === 'gate' && this.onPen(d)) this.works.setGate(d.id, false);
+    } else if (how === 'fleece') {
+      const o = this.model.out;
+      let n = 0;
+      for (let i = 0; i < o.count && n < 10; i++) {
+        if (this.works.wool[i] < WORKS.woolly) continue;
+        this.works.wool[i] = 0;
+        this.works.stock.fleece++;
+        this.handFleece++;
+        n++;
+      }
+    } else if (how === 'rotation') {
+      // the stations where the Bureau dropped them, two paddocks round them, the flock in one
+      const has = (k: string) => this.works.devices.some((d) => d.kind === k);
+      if (!has('shed') || !has('spindle')) {
+        for (const d of [...this.works.devices]) if (d.kind === 'shed' || d.kind === 'spindle') this.works.remove(d.id);
+        this.works.add({ kind: 'shed', at: VALLEY.shed, dir: 0 });
+        this.works.add({ kind: 'spindle', at: VALLEY.spindle, dir: 2 });
+      }
+      const A = VALLEY.paddockA;
+      const B = VALLEY.paddockB;
+      // clear anything in the way, then fence
+      for (const d of [...this.works.devices]) {
+        if (d.kind === 'shed' || d.kind === 'spindle') continue;
+        const c = d.kind === 'hurdle' || d.kind === 'gate' ? { x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2 } : 'at' in d ? d.at : null;
+        if (c && c.x >= A.x0 - 0.5 && c.x <= B.x1 + 0.5 && c.y >= A.y0 - 0.5 && c.y <= A.y1 + 0.5) this.works.remove(d.id);
+      }
+      buildRotation(this.works);
+      this.moveFlock((A.x0 + A.x1) / 2, (A.y0 + A.y1) / 2, 1.3);
+    } else if (how === 'woofed') {
+      const g = this.form.goal;
+      if (g.kind === 'woofed') for (let i = 0; i < g.n && i < this.flockSize; i++) this.woofed.add(i);
+    }
     this.building = false;
     this.builder.cancel();
+    this.syncObstacles();
     this.gafoop.say('Blueprints from the Bureau. Nobody tell the Auditor.', this.time, 3);
   }
 
+  /** Is this gate in the side of the valley's pen? */
+  private onPen(d: { a: Pt; b: Pt }): boolean {
+    const P = VALLEY.pen;
+    const on = (p: Pt) => (Math.abs(p.x - P.x0) < 0.4 || Math.abs(p.x - P.x1) < 0.4 || Math.abs(p.y - P.y0) < 0.4 || Math.abs(p.y - P.y1) < 0.4)
+      && p.x > P.x0 - 0.5 && p.x < P.x1 + 0.5 && p.y > P.y0 - 0.5 && p.y < P.y1 + 0.5;
+    return on(d.a) && on(d.b);
+  }
+
+  /** The cheats' teleport: the whole flock, as it is, regrouped round (x, y). */
+  private moveFlock(x: number, y: number, spread: number): void {
+    const o = this.model.out;
+    const wool = this.works.wool.slice();
+    const pack = this.works.pack.slice();
+    const hunger = o.hunger.slice(0, o.count);
+    const at = cluster(o.count, x, y, this.attempt, spread).map((p, i) => ({ ...p, hunger: hunger[i] }));
+    this.makeFlock(at);
+    this.works.wool.set(wool.subarray(0, this.works.wool.length));
+    this.works.pack.set(pack.subarray(0, this.works.pack.length));
+  }
+
   private afterStep(): void {
+    const o = this.model.out;
+    const handsOff = this.time - this.handsOn >= HANDS_OFF;
     for (const e of this.works.events) {
       if (e.kind !== 'yarn') continue;
-      const sp = this.cam.toScreen(new THREE.Vector3(e.at.x, 1.4, e.at.y));
-      this.floaters.push({ text: '+1 YARN', x: sp.x, y: sp.y, age: 0 });
+      this.floatAt(e.at.x, e.at.y, '+1 YARN');
       this.audio?.penned();
+      this.quip('firstYarn', 0.3);
+      // made by a spindle hut while nobody was herding
+      if (handsOff) this.unattended++;
     }
-    if (this.spec.kind === 'herdway') {
-      this.afterHerdwayStep();
-      return;
-    }
-    const PEN = this.spec.pen!;
-    const o = this.model.out;
-    let count = 0;
-    let running = 0;
-    for (let i = 0; i < o.count; i++) {
-      const inside = o.x[i] > PEN.x0 && o.x[i] < PEN.x1 && o.y[i] > PEN.y0 && o.y[i] < PEN.y1;
-      if (inside) count++;
-      if (inside && !this.penned[i]) {
-        this.penned[i] = 1;
-        // credit each sheep once, however often it wanders in and out
-        if (!this.everPenned[i]) {
-          this.everPenned[i] = 1;
-          const sp = this.cam.toScreen(new THREE.Vector3(o.x[i], 1.2, o.y[i]));
-          this.floaters.push({ text: '+1', x: sp.x, y: sp.y, age: 0 });
-          this.audio?.penned();
+    // sheep the Woof-Woof sends through an open gate (counted for a moment after it stops,
+    // while they are still running)
+    if (this.time - this.lastWoof < 3 && this.prevX.length === o.count) {
+      for (const d of this.works.devices) {
+        if (d.kind !== 'gate' || !this.works.gates.get(d.id)?.open) continue;
+        for (let i = 0; i < o.count; i++) {
+          if (this.woofed.has(i) || !crosses(d.a, d.b, this.prevX[i], this.prevY[i], o.x[i], o.y[i])) continue;
+          this.woofed.add(i);
+          this.floatAt(o.x[i], o.y[i], '+1');
         }
-      } else if (!inside && this.penned[i]) {
-        this.penned[i] = 0;
       }
-      if (o.state[i] === SheepState.Run) running++;
     }
-    this.pennedCount = count;
-    if (count >= Math.ceil(o.count / 2)) this.quip('half');
-    if (count === o.count && !this.gateClosed) this.quip('allInOpen');
-    if (running > o.count * 0.4 && this.time - this.lastScatterQuip > 12 && this.time - this.honkAt > 3) {
+    if (this.prevX.length !== o.count) {
+      this.prevX = new Float32Array(o.count);
+      this.prevY = new Float32Array(o.count);
+    }
+    this.prevX.set(o.x.subarray(0, o.count));
+    this.prevY.set(o.y.subarray(0, o.count));
+    let running = 0;
+    for (let i = 0; i < o.count; i++) if (o.state[i] === SheepState.Run) running++;
+    if (running > o.count * 0.4 && this.time - this.lastScatterQuip > 12 && this.time - this.lastWoof > 3) {
       this.lastScatterQuip = this.time;
       const list = QUIPS.scatter;
       this.gafoop.say(list[this.quipIndex++ % list.length], this.time, 2.4);
     }
-    if (!this.won && count === o.count && this.gateClosed) {
-      this.won = { time: this.clock, at: this.time };
-      this.audio?.win();
-      this.quip('win', 0.4);
+    // how far along the Form's goal is
+    const g = this.form.goal;
+    let count = 0;
+    let total = 0;
+    let done = false;
+    switch (g.kind) {
+      case 'pen': {
+        const P = VALLEY.pen;
+        for (let i = 0; i < o.count; i++) if (inRect(P, o.x[i], o.y[i])) count++;
+        total = o.count;
+        const shut = this.works.devices.every((d) => d.kind !== 'gate' || !this.onPen(d) || !this.works.gates.get(d.id)?.open);
+        done = count === total && shut;
+        break;
+      }
+      case 'fleece':
+        count = this.handFleece - this.base.handFleece;
+        total = g.n;
+        break;
+      case 'yarn':
+        count = this.works.yarn - this.base.yarn;
+        total = g.n;
+        break;
+      case 'woofed':
+        count = this.woofed.size;
+        total = g.n;
+        break;
+      case 'unattended':
+        count = this.unattended;
+        total = g.n;
+        break;
+      case 'none':
+        break;
     }
-  }
-
-  /** A herdway is won on yarn hung up. */
-  private afterHerdwayStep(): void {
-    const yarn = this.works.yarn;
-    if (yarn >= 1) this.quip('firstYarn', 0.3);
-    if (yarn >= Math.ceil(this.spec.goal / 2)) this.quip('halfYarn', 0.3);
-    if (!this.won && yarn >= this.spec.goal) {
-      this.won = { time: this.clock, at: this.time };
-      this.audio?.win();
-      this.quip('winYarn', 0.4);
-    }
+    if (g.kind !== 'pen' && g.kind !== 'none') done = count >= total;
+    this.goalCount = Math.min(count, total);
+    this.goalTotal = total;
+    if (!this.won && done) this.approve();
   }
 
   private playBleats(): void {
@@ -703,30 +1050,36 @@ export class Game {
     const toScreen = (x: number, y: number, h = 0) => this.cam.toScreen(new THREE.Vector3(x, h, y));
     if (this.started && this.showFlow) this.flowField.draw(g, this.fonts, toScreen, this.works, W, H);
     if (this.started && this.building) this.drawGhost(g, toScreen);
-    // a pointer to the pen (or the works) when it is off screen
+    // a pointer to what the Form is about (the pen, the works) when it is off screen
     let penArrow: HudState['penArrow'] = null;
-    const pc = this.cam.toScreen(new THREE.Vector3(this.spec.focus.x, 0, this.spec.focus.y));
-    if (!this.building && (pc.x < 0 || pc.x > W || pc.y < 0 || pc.y > H)) {
+    const focus = this.focus();
+    const pc = focus ? this.cam.toScreen(new THREE.Vector3(focus.at.x, 0, focus.at.y)) : new THREE.Vector2(W / 2, H / 2);
+    if (focus && !this.building && (pc.x < 0 || pc.x > W || pc.y < 0 || pc.y > H)) {
       const dx = pc.x - W / 2;
       const dy = pc.y - H / 2;
       // keep clear of the touch buttons along the bottom
       const below = dy > 0 && this.touch ? 80 : 30;
       const k = Math.min((W / 2 - 24) / Math.abs(dx || 1e-6), (H / 2 - below) / Math.abs(dy || 1e-6));
-      penArrow = { x: W / 2 + dx * k, y: H / 2 + dy * k, angle: Math.atan2(dy, dx), label: this.spec.kind === 'pen' ? 'PEN' : 'WORKS' };
+      penArrow = { x: W / 2 + dx * k, y: H / 2 + dy * k, angle: Math.atan2(dy, dx), label: focus.label };
     }
-    const herdway = this.spec.kind === 'herdway';
     const layout = this.layout();
+    const f = this.form;
+    const gl = goalLabel(f.goal);
+    const gate = this.nearGate();
     const state: HudState = {
       layout,
       objective: {
-        title: this.spec.title,
-        count: herdway ? this.works.yarn : this.pennedCount,
-        total: herdway ? this.spec.goal : this.flockSize,
-        label: herdway ? 'YARN' : 'PENNED',
-        icon: herdway ? 'yarn' : 'sheep',
+        title: `FORM ${f.code} - ${f.title}`,
+        count: this.goalCount,
+        total: this.goalTotal,
+        label: gl.label,
+        icon: gl.icon,
       },
       time: this.won ? this.won.time : this.clock,
-      gateOpen: this.gate ? !this.gateClosed : null,
+      gateNear: gate === null ? null : !!this.works.gates.get(gate)?.open,
+      stock: this.works.stock,
+      woofing: this.woofing,
+      handJob: this.job ? { kind: this.job.kind, progress: Math.min(1, this.job.t / (this.job.kind === 'shear' ? HAND.shear : HAND.spin)) } : null,
       speed: this.speed,
       flowOn: this.showFlow,
       buildHint: this.building ? this.builder.hint(this.touch) : null,
@@ -737,9 +1090,8 @@ export class Game {
       floaters: this.floaters,
       cursor: this.input.pointer && this.started ? { ...this.input.pointer, tool: gp.tool } : null,
       won: layout.won && this.won
-        ? { time: this.won.time, age: layout.won.age, lines: [this.spec.verdict[0].replace('{n}', String(herdway ? this.spec.goal : this.flockSize)), this.spec.verdict[1]] }
+        ? { time: this.won.time, age: layout.won.age, lines: [f.verdict[0].replace('{n}', String(this.goalTotal)), f.verdict[1]], code: f.code }
         : null,
-      megaphoneReady: Math.min(1, (this.time - this.honkAt) / HONK.cooldown),
       touch: this.touch,
       feeding: gp.tool === 'bucket',
       held: this.held,
@@ -788,9 +1140,20 @@ export class Game {
   }
 
   /** For tooling: the model's outputs and Gafoop's position. */
-  debug(): { gafoop: { x: number; y: number }; penned: number; total: number; won: boolean; time: number } {
-    return { gafoop: { x: this.gafoop.pos.x, y: this.gafoop.pos.z }, penned: this.pennedCount, total: this.flockSize, won: !!this.won, time: this.clock };
+  debug(): { gafoop: { x: number; y: number }; form: string; count: number; total: number; won: boolean; time: number } {
+    return { gafoop: { x: this.gafoop.pos.x, y: this.gafoop.pos.z }, form: this.form.code, count: this.goalCount, total: this.goalTotal, won: !!this.won, time: this.clock };
   }
+}
+
+/** Does the step p0→p1 cross the segment a–b? */
+function crosses(a: Pt, b: Pt, x0: number, y0: number, x1: number, y1: number): boolean {
+  const side = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  const d1 = side(a.x, a.y, b.x, b.y, x0, y0);
+  const d2 = side(a.x, a.y, b.x, b.y, x1, y1);
+  if ((d1 > 0) === (d2 > 0)) return false;
+  const d3 = side(x0, y0, x1, y1, a.x, a.y);
+  const d4 = side(x0, y0, x1, y1, b.x, b.y);
+  return (d3 > 0) !== (d4 > 0);
 }
 
 /** Panning is faster when zoomed out. */

@@ -30,6 +30,8 @@ export interface PointStimulus {
   y: number;
   strength: number;
   radius: number;
+  /** Autosheep: lures only, felt by sheep hungrier than this */
+  appetite?: number;
 }
 
 /**
@@ -69,7 +71,7 @@ export class Perception {
           const py = y + Math.sin(a) * d;
           // a little less keen on grass further off
           const v = grass.at(px, py) - d * 0.01;
-          if (v > best && !obstacles.crossesAny(x, y, px, py)) { best = v; bx = px; by = py; }
+          if (v > best && !obstacles.crossesAny(x, y, px, py, true)) { best = v; bx = px; by = py; }
         }
       }
       flock.grassX[i] = bx;
@@ -157,10 +159,14 @@ export class Perception {
       // Autosheep: the strongest lure in reach; like a threat, it is hard to sense through a
       // stone wall (a shut shed is not tugged at by the salt lick outside its back door)
       let lure = 0;
+      // Autosheep: grazing sheep care for food by how hungry they are: a full one hardly
+      // looks up for a bucket, a starving one goes a long way for oats
+      const appetite = grass ? cfg.grazing.appetite[0] + (cfg.grazing.appetite[1] - cfg.grazing.appetite[0]) * flock.hunger[i] : 1;
       for (let k = 0; k < lures.length; k++) {
         const l = lures[k];
         const d = Math.hypot(l.x - x, l.y - y);
-        let v = l.strength * smoothstep(l.radius, l.radius * 0.5, d);
+        let v = l.strength * appetite * smoothstep(l.radius, l.radius * 0.5, d);
+        if (grass && l.appetite !== undefined) v *= smoothstep(l.appetite, l.appetite + 0.2, flock.hunger[i]);
         if (v > lure && obstacles.blocksSight(x, y, l.x, l.y)) v *= sight;
         if (v > lure) { lure = v; flock.lureX[i] = l.x; flock.lureY[i] = l.y; }
       }

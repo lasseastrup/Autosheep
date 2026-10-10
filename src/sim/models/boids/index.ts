@@ -24,6 +24,7 @@ export class BoidsModel implements FlockModel {
   private fear!: Float32Array;
   private group!: Int32Array;
   private wander!: Float32Array;
+  private hunger!: Float32Array;
   private fences: Obstacle[] = [];
   private seed = 1;
   private grass: GrassField | null = null;
@@ -37,7 +38,7 @@ export class BoidsModel implements FlockModel {
     this.time = 0;
     const f = () => new Float32Array(n);
     this.x = f(); this.y = f(); this.vx = f(); this.vy = f();
-    this.heading = f(); this.speed = f(); this.fear = f(); this.wander = f();
+    this.heading = f(); this.speed = f(); this.fear = f(); this.wander = f(); this.hunger = f();
     this.state = new Uint8Array(n);
     this.group = new Int32Array(n);
     spec.sheep.forEach((s, i) => {
@@ -50,7 +51,7 @@ export class BoidsModel implements FlockModel {
     this.out = {
       get count() { return self.n; },
       x: this.x, y: this.y, heading: this.heading, speed: this.speed,
-      state: this.state, fear: this.fear, group: this.group,
+      state: this.state, fear: this.fear, group: this.group, hunger: this.hunger,
     };
   }
 

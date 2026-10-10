@@ -37,7 +37,11 @@ export class SheepherdingV1 implements FlockModel {
       state: f.state,
       fear: f.fear,
       group: f.group,
+      hunger: f.hunger,
     };
+    spec.sheep.forEach((s, i) => {
+      if (s.hunger !== undefined && i < f.count) f.hunger[i] = s.hunger;
+    });
   }
 
   setObstacles(obstacles: readonly Obstacle[]): void {
