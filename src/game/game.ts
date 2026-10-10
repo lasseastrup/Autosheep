@@ -122,6 +122,7 @@ export class Game {
   private grassView!: GrassView;
   /** seconds of real time, for things that should not speed up with fast-forward (the wind) */
   private wall = 0;
+  private readonly tmpFwd = new THREE.Vector3();
   /** simulation speed: 1, 2 or 4 */
   speed = 1;
   /** show on-screen controls (set once the player touches the screen) */
@@ -374,7 +375,8 @@ export class Game {
     this.flock.update(this.model.out, this.started ? this.acc / this.model.dt : 1, this.time, sdt, g.pos, this.works);
     this.worksView.update(sdt, this.time);
     this.wall += dt;
-    this.grassView.fitTo(this.cam.pixelsPerMetre, this.cam.pitch);
+    const fwd = this.cam.camera.getWorldDirection(this.tmpFwd);
+    this.grassView.fitTo(this.cam.pixelsPerMetre, this.cam.pitch, fwd.x, fwd.z);
     this.grassView.update(dt, this.wall);
     for (const f of this.floaters) f.age += dt;
     this.floaters = this.floaters.filter((f) => f.age < 1.2);

@@ -5,11 +5,12 @@ import type { GrassField } from '../sim/grass';
 
 /**
  * Grass you can see the flock eat: shell texturing. The meadow is drawn again as a stack of
- * thin horizontal layers ("shells") a few centimetres apart; each layer keeps only the pixels
- * that fall inside a blade at that height. Blades sit one to a small cell, each with its own
- * height, and taper from root to tip, so the stack reads as a sward of tufts. A blade's height
- * is also scaled by the grass field (src/sim/grass.ts), uploaded as a texture, so grazed ground
- * shows short yellowed stubble and untouched ground long green grass.
+ * thin horizontal layers ("shells"); each layer keeps only the pixels that fall inside a blade
+ * at that height. Blades are pixel-art strokes, one pixel wide, three to a tuft from a shared
+ * root and splayed \|/, with the darker sward showing between tufts; each layer's slice of a
+ * blade is stretched toward the camera to meet the next layer's on screen, so a blade draws as
+ * an unbroken line. Blade height follows the grass field (src/sim/grass.ts), uploaded as a
+ * texture, so grazed ground shows short olive stubble and untouched ground long green grass.
  *
  * Why shells: at 640x360 a blade is one to three pixels, so the cost is fill rate, and a few
  * layers of a cheap shader over the low-resolution frame is little; a height field drives them
@@ -43,7 +44,10 @@ export class GrassView {
       uGrassSize: { value: new THREE.Vector2(field.cols * field.cell, field.rows * field.cell) },
       uGrassH: { value: height },
       uGrassTime: { value: 0 },
-      uBlade: { value: 0.17 },
+      uCell: { value: 0.36 },
+      uHalfW: { value: 0.03 },
+      uHalfL: { value: 0.05 },
+      uFwd: { value: new THREE.Vector2(0, -1) },
       uBottom: { value: 0.125 },
       uPpm: { value: 20 },
       uGSwamp: { value: new THREE.Color(C.swamp) },
@@ -70,14 +74,22 @@ export class GrassView {
   }
 
   /**
-   * How many layers: enough that neighbouring layers are about a pixel apart on screen at
-   * `pixelsPerMetre` (with the camera's pitch), so blades look solid rather than sliced. Blades
-   * taper, so a little over a pixel does not show.
+   * Fit the layers to the view. Blades are strokes one pixel wide; each layer's slice of a blade
+   * is stretched toward the camera far enough to meet the next layer's on screen, so a blade
+   * draws as an unbroken line however far apart the layers are. The layers are then about two
+   * pixels apart (only the lean is stepped by that), and `fwdX, fwdZ` is the camera's forward
+   * direction along the ground.
    */
-  fitTo(pixelsPerMetre: number, pitch: number): void {
-    this.setShells(Math.ceil((this.height * Math.cos(pitch) * pixelsPerMetre) / 1.3) + 1);
-    // wind moves blades by whole pixels
-    this.uniforms.uPpm.value = pixelsPerMetre;
+  fitTo(pixelsPerMetre: number, pitch: number, fwdX: number, fwdZ: number): void {
+    const rise = this.height * Math.cos(pitch) * pixelsPerMetre;
+    this.setShells(Math.ceil(rise / 2) + 1);
+    const gap = rise / this.shells;
+    const u = this.uniforms;
+    u.uPpm.value = pixelsPerMetre;
+    u.uHalfW.value = 0.56 / pixelsPerMetre;
+    u.uHalfL.value = (gap / 2 + 0.55) / (pixelsPerMetre * Math.sin(pitch));
+    const l = Math.hypot(fwdX, fwdZ) || 1;
+    (u.uFwd.value as THREE.Vector2).set(fwdX / l, fwdZ / l);
   }
 
   setShells(n: number): void {
@@ -150,7 +162,8 @@ vGWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;`,
 varying vec3 vGWorld;
 uniform sampler2D uGrassMap;
 uniform vec2 uGrassSize;
-uniform float uGrassH, uGrassTime, uBlade, uPpm, uBottom;
+uniform float uGrassH, uGrassTime, uCell, uHalfW, uHalfL, uPpm, uBottom;
+uniform vec2 uFwd;
 uniform vec3 uGSwamp, uGPine, uGGrass, uGLeaf, uGMeadow, uGHay, uGOlive, uGMoss;
 float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float gNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -160,56 +173,72 @@ float gNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
         '#include <color_fragment>',
         `#include <color_fragment>
 {
-  // how far up the blade this layer is (0 root .. 1 a full blade's tip)
+  // how far up the blade this layer is (0 root .. 1 the tallest blade's tip)
   float t = vGWorld.y / uGrassH;
   vec2 w = vGWorld.xz;
-  // wind: gusts roll across the meadow (a slow noise scrolling at a few metres a second) and
-  // lean the tips over, with a little flutter; roots stay put. Rounded to whole pixels.
-  float gust = gNoise(w * vec2(0.07, 0.045) + vec2(uGrassTime * 0.45, uGrassTime * 0.12));
-  vec2 lean = vec2(0.85, 0.4) * max(gust - 0.25, 0.0) * 1.1 + vec2(sin(uGrassTime * 2.1 + w.x * 0.7), cos(uGrassTime * 1.7 + w.y * 0.6)) * 0.06;
-  lean = floor(lean * t * t * uPpm + 0.5) / uPpm;
-  vec2 p = w - lean;
+  float len = texture2D(uGrassMap, w / uGrassSize).r;
   // grazed short here? then most layers are gone before any work is done
-  float len = texture2D(uGrassMap, p / uGrassSize).r;
   if (t > len) discard;
-  // one blade per cell, each its own height: patches of tall and shorter grass a few metres
-  // across, tufts within them, the odd tall stalk, all scaled by how long the grass is here
-  vec2 q = p / uBlade;
-  vec2 cell = floor(q);
-  float r = gHash(cell);
-  float clump = gNoise(cell * uBlade * 2.2 + 3.1);
-  float sward = gNoise(cell * uBlade * 0.22 + 11.7);
-  float h = len * mix(0.38, 1.0, sward * sward * (3.0 - 2.0 * sward)) * (r > 0.94 ? 1.0 : 0.42 + 0.3 * r + 0.28 * clump);
   bool base = t < uBottom && len > 0.12;
-  if (t > h && !base) discard;
-  // tapering from a fat root to a point, from a centre jittered in its cell so no grid shows
-  vec2 off = vec2(gHash(cell + 17.3), gHash(cell + 41.9)) - 0.5;
-  vec2 f = fract(q) - 0.5 - off * 0.4;
-  float k = 1.0 - t / max(h, 1e-3);
-  if (!base && dot(f, f) > 0.26 * k * k) discard;
-  // colour per blade, not per pixel, so the sward reads calm, in exact palette greens (nothing
-  // for quantising to flicker between). Each of the meadow's patches is a three-step ramp: the
-  // roots one step darker (the shade down in the sward), the blades, and tips one step lighter
-  // on the taller blades. A rare hay-yellow tip; the olive ramp where it is grazed short.
-  float n = gNoise(cell * uBlade * 0.09) * 0.65 + gNoise(cell * uBlade * 0.31 + 7.0) * 0.35;
-  float up = t / max(h, 1e-3);
-  vec3 dark = n < 0.26 ? uGPine : (n > 0.6 ? uGLeaf : uGGrass);
-  vec3 body = n < 0.26 ? uGGrass : (n > 0.6 ? uGMeadow : uGLeaf);
-  vec3 light = n < 0.26 ? uGLeaf : (n > 0.6 ? uGHay : uGMeadow);
-  // tips catch the light only up where the tall grass is (absolute height), so tall patches
-  // read bright-topped and short ones darker: you can see the sward's height from above
-  vec3 c = (base || up < 0.3) ? dark : body;
-  if (!base && up > 0.5 && t > 0.36) c = light;
-  // a gust bends the blades over and they catch the light: bright bands roll across the meadow
-  // with the wind (blade by blade at their edges, so they stay pixel art)
-  if (!base && up > 0.4 && fract(r * 7.13) < smoothstep(0.58, 0.8, gust)) c = light;
-  if (!base && up > 0.7 && r > 0.993) c = uGHay;
-  if (len < 0.4) c = (base || up < 0.4) ? uGOlive : uGMoss;
+  // wind: gusts roll across the meadow (a slow noise scrolling at a few metres a second); they
+  // bend the blades over, downwind, and the blades catch the light
+  float gust = gNoise(w * vec2(0.07, 0.045) + vec2(uGrassTime * 0.45, uGrassTime * 0.12));
+  float g = smoothstep(0.3, 0.8, gust);
+  vec2 wind = vec2(0.86, 0.5) * (0.02 + 0.12 * g) + vec2(sin(uGrassTime * 2.3 + w.x * 0.8), cos(uGrassTime * 1.9 + w.y * 0.7)) * 0.012;
+  // Tufts, one per cell: three blades from a shared root, each its own height and lean, so
+  // they draw as little \|/ strokes with the darker sward showing between. A blade leaning
+  // downwind can reach into the next cells, so the two upwind neighbours are looked at too.
+  vec2 across = vec2(-uFwd.y, uFwd.x);
+  bool hit = false;
+  float hu = 0.0;
+  float hr = 0.0;
+  float hh = 0.0;
+  vec2 hc = vec2(0.0);
+  if (!base) {
+    for (int nb = 0; nb < 3; nb++) {
+      vec2 cell = floor(w / uCell) - (nb == 1 ? vec2(1.0, 0.0) : (nb == 2 ? vec2(0.0, 1.0) : vec2(0.0)));
+      vec2 local = w - (cell + 0.5) * uCell;
+      float sward = gNoise(cell * uCell * 0.22 + 11.7);
+      float clump = gHash(cell + 3.7);
+      float tuft = mix(0.36, 1.0, sward * sward * (3.0 - 2.0 * sward)) * (0.6 + 0.4 * clump);
+      vec2 root = (vec2(gHash(cell + 1.3), gHash(cell + 9.1)) - 0.5) * uCell * 0.2;
+      for (int b = 0; b < 3; b++) {
+        float rb = gHash(cell + float(b) * 7.31 + 0.5);
+        float h = len * tuft * (0.62 + 0.38 * rb);
+        if (t > h) continue;
+        float u = t / h;
+        // splayed: the middle blade nearly upright, the outer two leaning out either side
+        float a = 6.2832 * gHash(cell + 2.9) + float(b) * 2.1;
+        vec2 lean = vec2(cos(a), sin(a)) * uCell * (b == 1 ? 0.06 : 0.32) * (0.7 + 0.3 * rb);
+        vec2 c = root + (lean + wind) * u * u;
+        vec2 d = local - c;
+        if (abs(dot(d, across)) < uHalfW * (1.0 - 0.25 * u) && abs(dot(d, uFwd)) < uHalfL) {
+          hit = true; hu = u; hr = rb; hh = h; hc = cell;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+    if (!hit) discard;
+  }
+  // colour: the meadow's patches as three-step ramps from the palette's greens (exact colours,
+  // nothing for quantising to flicker between): the sward between the blades one step darker,
+  // the blades, and lighter tips on the tall blades and wherever a gust bends them into the
+  // light. The olive ramp where it is grazed short.
+  vec2 pc = base ? floor(w / uCell) : hc;
+  float n = gNoise(pc * uCell * 0.09) * 0.65 + gNoise(pc * uCell * 0.31 + 7.0) * 0.35;
+  vec3 dark = n < 0.28 ? uGPine : (n > 0.68 ? uGLeaf : uGGrass);
+  vec3 body = n < 0.28 ? uGGrass : (n > 0.68 ? uGMeadow : uGLeaf);
+  vec3 light = n < 0.28 ? uGLeaf : uGMeadow;
+  vec3 c = base ? dark : body;
+  if (!base && hu > 0.62 && ((hh > 0.45 && hr > 0.4) || fract(hr * 7.13) < g)) c = light;
+  if (!base && hu > 0.7 && hr > 0.99) c = uGHay;
+  if (len < 0.4) c = (base || hu < 0.4) ? uGOlive : uGMoss;
   diffuseColor.rgb = c;
 }`,
       )
       .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.a = 2.0;');
   };
-  m.customProgramCacheKey = () => 'grass-shells-v10';
+  m.customProgramCacheKey = () => 'grass-strokes-v3';
   return m;
 }
