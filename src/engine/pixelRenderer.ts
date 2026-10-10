@@ -257,7 +257,10 @@ void main() {
   ivec2 p = ivec2(gl_FragCoord.xy);
   vec4 src = texelFetch(tColor, p, 0);
   vec3 col = src.rgb;
-  float ditherW = src.a; // written by materials: 0 = never dither (toon), 1 = free
+  // written by materials: 0 = never dither (toon), 1 = free; 2 marks grass (art/grass.ts),
+  // which is never outlined (grass in front of a sheep's legs hides their outline too)
+  bool grassPx = src.a > 1.5;
+  float ditherW = grassPx ? 0.0 : src.a;
   col += texture2D(tBloom, vUv).rgb * uBloom;
   col *= uExposure;
 
@@ -287,7 +290,8 @@ void main() {
     normalEdge = step(uNormalThreshold, acc);
   }
 
-  if (depthEdge > 0.0) {
+  if (grassPx) {
+  } else if (depthEdge > 0.0) {
     col = mix(col * (1.0 - uOutline), uOutlineColor, uUseOutlineColor);
   } else {
     col *= 1.0 + uHighlight * normalEdge;

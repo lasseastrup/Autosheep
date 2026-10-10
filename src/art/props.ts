@@ -21,10 +21,14 @@ export function rollingHills(seed = 1, amp = 1): HeightFn {
  * Ground material: toon lighting with the colour picked per pixel from world-space noise
  * (meadow patches, a worn lane, grass speckles), so patches have clean pixel edges.
  */
-export function groundMaterial(opts: { base?: string; light?: string; dark?: string; path?: [number, number, number] | null; pathColor?: string; pathEdge?: string } = {}): THREE.MeshLambertMaterial {
+export function groundMaterial(opts: { base?: string; light?: string; dark?: string; path?: [number, number, number] | null; pathColor?: string; pathEdge?: string; grass?: { map: THREE.Texture; size: THREE.Vector2 } } = {}): THREE.MeshLambertMaterial {
   const m = toon(0xffffff, { unique: true });
   const prev = m.onBeforeCompile;
   const uniforms = {
+    uGrassMap: { value: opts.grass?.map ?? null },
+    uGrassSize: { value: opts.grass?.size ?? new THREE.Vector2(1, 1) },
+    uGMud: { value: new THREE.Color(C.mud) },
+    uGOlive: { value: new THREE.Color(C.olive) },
     uGBase: { value: new THREE.Color(opts.base ?? C.grass) },
     uGLight: { value: new THREE.Color(opts.light ?? C.leaf) },
     uGDark: { value: new THREE.Color(opts.dark ?? C.pine) },
@@ -43,7 +47,10 @@ export function groundMaterial(opts: { base?: string; light?: string; dark?: str
         '#include <common>',
         `#include <common>
 varying vec3 vGWorld;
-uniform vec3 uGBase, uGLight, uGDark, uGPath, uGPathC, uGPathE;
+uniform vec3 uGBase, uGLight, uGDark, uGPath, uGPathC, uGPathE, uGMud, uGOlive;
+#ifdef GROUND_GRASS
+uniform sampler2D uGrassMap; uniform vec2 uGrassSize;
+#endif
 float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float gNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(gHash(i), gHash(i + vec2(1, 0)), f.x), mix(gHash(i + vec2(0, 1)), gHash(i + vec2(1, 1)), f.x), f.y); }`,
@@ -61,11 +68,17 @@ float gNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   float pd = abs(w.y - (uGPath.z + sin(w.x * uGPath.y) * uGPath.x));
   if (pd < 0.6 + gNoise(w * 2.0) * 0.25) c = uGPathC;
   else if (pd < 0.95) c = uGPathE;
+#ifdef GROUND_GRASS
+  // where a flock has grazed the grass to nothing, trodden earth shows through
+  vec2 gm = texture2D(uGrassMap, w / uGrassSize).rg;
+  if (gm.g > 0.5 && gm.r < 0.14) c = gHash(floor(w * 4.0)) > 0.72 ? uGMud : uGOlive;
+#endif
   diffuseColor.rgb = c;
 }`,
       );
+    if (opts.grass) sh.fragmentShader = '#define GROUND_GRASS\n' + sh.fragmentShader;
   };
-  m.customProgramCacheKey = () => 'ground-v1';
+  m.customProgramCacheKey = () => (opts.grass ? 'ground-v1g' : 'ground-v1');
   return m;
 }
 

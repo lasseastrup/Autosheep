@@ -190,6 +190,27 @@ export interface SimConfig {
   };
   /** Autosheep: after a startle the flock flees from where it came for this long (s) */
   startle: { echo: number; echoStrength: number };
+  /** Autosheep: grazing the world's grass, when the game hands the model a grass field */
+  grazing: {
+    /** hunger gained per second (0 full, 1 starving) */
+    hungerRate: number;
+    /** grass eaten (full cells' worth) that takes a sheep from starving to full */
+    fill: number;
+    /** muzzle distance ahead of the body centre, m */
+    muzzle: number;
+    /** each sheep looks round for better grass this often, s (staggered across the flock) */
+    lookEvery: number;
+    /** rings it looks at, m; targets at least `walkFrom` away are walked to (a lure), nearer
+     * ones grazed toward step by step */
+    look: number[];
+    walkFrom: number;
+    /** a gain in length smaller than this is not worth moving for */
+    worth: number;
+    /** pull of the best grass on a starving sheep standing on bare ground (as a lure) */
+    pull: number;
+    /** on poor grass a grazing sheep steps this much more often (at full hunger, bare ground) */
+    restless: number;
+  };
   pbd: { iterations: number; stiffness: number; slack: number; friction: number; xsph: number };
   behaviourEnabled: boolean;
 }
@@ -365,6 +386,7 @@ export function defaultConfig(): SimConfig {
     obstacle: { dangerStart: 2.2, dangerFull: 0.35, sightFactor: 0.15 },
     lure: { walkRate: 1.2, weight: 1.4, arriveDist: 2.0 },
     startle: { echo: 2.0, echoStrength: 0.6 },
+    grazing: { hungerRate: 1 / 150, fill: 20, muzzle: 0.5, lookEvery: 1.5, look: [2.5, 5, 9, 15], walkFrom: 4, worth: 0.15, pull: 0.5, restless: 4 },
     pbd: { iterations: 3, stiffness: 0.6, slack: 0.97, friction: 0.3, xsph: 0.3 },
     behaviourEnabled: true,
   };

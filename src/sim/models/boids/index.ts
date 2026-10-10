@@ -1,3 +1,4 @@
+import { GRASS, type GrassField } from '../../grass';
 import { behindFlap, flowTarget, hashOutputs, inChute, segmentT, SheepState, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
 
 /**
@@ -25,6 +26,7 @@ export class BoidsModel implements FlockModel {
   private wander!: Float32Array;
   private fences: Obstacle[] = [];
   private seed = 1;
+  private grass: GrassField | null = null;
 
   init(spec: FlockInit): void {
     const n = spec.sheep.length;
@@ -62,6 +64,10 @@ export class BoidsModel implements FlockModel {
 
   setObstacles(obstacles: readonly Obstacle[]): void {
     this.fences = obstacles.slice();
+  }
+
+  setGrass(grass: GrassField | null): void {
+    this.grass = grass;
   }
 
   step(stimuli: readonly Stimulus[]): void {
@@ -146,6 +152,20 @@ export class BoidsModel implements FlockModel {
       this.wander[i] += (this.rand() - 0.5) * 0.6;
       dx += Math.cos(this.wander[i]) * 0.1;
       dy += Math.sin(this.wander[i]) * 0.1;
+      // on short grass, amble toward the longest grass a few metres off
+      const g = this.grass;
+      if (g && g.at(x[i], y[i]) < 0.5) {
+        let best = g.at(x[i], y[i]) + 0.15;
+        let bx = 0;
+        let by = 0;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          const v = g.at(x[i] + Math.cos(a) * 4, y[i] + Math.sin(a) * 4);
+          if (v > best) { best = v; bx = Math.cos(a); by = Math.sin(a); }
+        }
+        dx += bx * 0.35;
+        dy += by * 0.35;
+      }
       // fences: steer away from anything closer than 1.5 m
       for (const o of this.fences) {
         if (behindFlap(o, x[i], y[i])) continue;
@@ -177,6 +197,7 @@ export class BoidsModel implements FlockModel {
       this.speed[i] = sp;
       if (sp > 0.05) this.heading[i] = Math.atan2(vy[i], vx[i]);
       this.state[i] = fear[i] > 0.45 ? SheepState.Run : sp > 0.5 ? SheepState.Walk : fear[i] > 0.15 ? SheepState.Alert : SheepState.Graze;
+      if (this.grass && this.state[i] === SheepState.Graze) this.grass.eat(x[i], y[i], GRASS.bite * 0.6 * dt);
     }
     this.groups();
     this.time += dt;

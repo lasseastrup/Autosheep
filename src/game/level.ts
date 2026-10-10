@@ -5,7 +5,7 @@ import { toon, glow, noOutline } from '../engine/toon';
 import { mesh } from '../art/geo';
 import { bakeStatic, chunkInstances, tileMesh } from '../engine/bake';
 import { Rng } from '../engine/rng';
-import { terrain, groundMaterial, meadowDressing, rollingHills, tree, bush, rock, farmhouse, barn, pickupTruck } from '../art/props';
+import { terrain, groundMaterial, rollingHills, tree, bush, rock, farmhouse, barn, pickupTruck } from '../art/props';
 
 /**
  * The meadow every level so far is played in: a walled field with trees, rocks, a ruined wall
@@ -156,25 +156,18 @@ export class GateMesh {
 }
 
 /** Everything that is only scenery: terrain, grass, trees, ruins, the farm beyond the wall. */
-export function buildScenery(l: LevelObstacles): { group: THREE.Group; blinkers: THREE.Mesh[] } {
+export function buildScenery(l: LevelObstacles, grass?: { map: THREE.Texture; size: THREE.Vector2 }): { group: THREE.Group; blinkers: THREE.Mesh[] } {
   const g = new THREE.Group();
   const blinkers: THREE.Mesh[] = [];
   // terrain() is centred on the origin; the meadow spans 0..120 x 0..90, so sample the heights
   // where each vertex will end up and then move the whole thing over
   const ground = terrain(320, 160, (x, z) => heightAt(x + WORLD.width / 2, z + WORLD.height / 2), {
-    material: groundMaterial({ path: [3, 0.05, 46], pathColor: C.khaki, pathEdge: C.moss }),
+    material: groundMaterial({ path: [3, 0.05, 46], pathColor: C.khaki, pathEdge: C.moss, grass }),
   });
   ground.geometry.translate(WORLD.width / 2, 0, WORLD.height / 2);
   g.add(ground);
 
-  const dress = meadowDressing(150, 9000, () => 0, 17, (x, z) => {
-    const wx = x + WORLD.width / 2;
-    const wz = z + WORLD.height / 2;
-    return wx < 1 || wx > WORLD.width - 1 || wz < 1 || wz > WORLD.height - 1;
-  });
-  dress.position.set(WORLD.width / 2, 0, WORLD.height / 2);
-  g.add(dress);
-
+  // the grass itself is drawn by GrassView (art/grass.ts), from the grass field the flock eats
   // the meadow's boundary wall
   const W = WORLD.width;
   const H = WORLD.height;

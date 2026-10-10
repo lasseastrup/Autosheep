@@ -1,4 +1,5 @@
 import { hashOutputs, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
+import type { GrassField } from '../../grass';
 import type { DeepPartial, SimConfig } from './config';
 import { Sim } from './sim';
 
@@ -41,6 +42,10 @@ export class SheepherdingV1 implements FlockModel {
 
   setObstacles(obstacles: readonly Obstacle[]): void {
     this.sim.setObstacles(obstacles);
+  }
+
+  setGrass(grass: GrassField | null): void {
+    this.sim.grass = grass;
   }
 
   step(stimuli: readonly Stimulus[]): void {

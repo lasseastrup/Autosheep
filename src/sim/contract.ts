@@ -9,6 +9,7 @@
  * Units: metres, which are also sheep body lengths, and seconds. The sim plane is (x, y) with
  * y pointing "south"; the renderer maps it to three.js (x, z). Headings are atan2(vy, vx).
  */
+import type { GrassField } from './grass';
 
 /** Coarse behaviour state reported for every sheep. Numeric so it fits a Uint8Array. */
 export const SheepState = {
@@ -153,6 +154,13 @@ export interface FlockModel {
   init(spec: FlockInit): void;
   /** Replace the static obstacle set. Cheap enough to call whenever a fence or gate changes. */
   setObstacles(obstacles: readonly Obstacle[]): void;
+  /**
+   * The world's grass (src/sim/grass.ts), or null for none. Sheep get hungry; grazing sheep eat
+   * the grass at their muzzles (the model writes to the field), and a hungry sheep on grazed
+   * ground goes looking for longer grass, so a flock left alone works its way across a field
+   * and moves on when it is bare. The caller grows the grass (`grass.grow`).
+   */
+  setGrass(grass: GrassField | null): void;
   /** Advance one fixed step under the given stimuli (startles fire on this step only). */
   step(stimuli: readonly Stimulus[]): void;
   readonly out: FlockOutputs;

@@ -1,4 +1,5 @@
 import { flowTarget, inChute, type Stimulus } from '../../contract';
+import type { GrassField } from '../../grass';
 import type { SimConfig } from './config';
 import { Flock, FEAR_HIST, MAX_NEIGHBOURS } from './flock';
 import type { Obstacles } from './obstacles';
@@ -42,6 +43,46 @@ export class Perception {
     this.cfg = cfg;
   }
 
+  /**
+   * Autosheep: what a sheep makes of the grass. Every `lookEvery` seconds (staggered) it looks
+   * round on a few rings for the longest grass it can walk to without crossing a fence, and
+   * remembers it. Returns that grass's pull if it is far enough to walk to, else 0.
+   */
+  private lookForGrass(flock: Flock, i: number, grass: GrassField, obstacles: Obstacles, step: number): number {
+    const G = this.cfg.grazing;
+    const x = flock.px[i];
+    const y = flock.py[i];
+    const h = flock.heading[i];
+    const here = grass.at(x + Math.cos(h) * G.muzzle, y + Math.sin(h) * G.muzzle);
+    flock.grassHere[i] = here;
+    const every = Math.max(1, Math.round(G.lookEvery / this.cfg.dt));
+    if ((step + i) % every === 0) {
+      let best = here + G.worth;
+      let bx = x;
+      let by = y;
+      for (let r = 0; r < G.look.length; r++) {
+        const d = G.look[r];
+        for (let k = 0; k < 8; k++) {
+          // a different start angle per ring, so the rings do not line up
+          const a = ((k + r * 0.5) / 8) * Math.PI * 2 + i * 0.37;
+          const px = x + Math.cos(a) * d;
+          const py = y + Math.sin(a) * d;
+          // a little less keen on grass further off
+          const v = grass.at(px, py) - d * 0.01;
+          if (v > best && !obstacles.crossesAny(x, y, px, py)) { best = v; bx = px; by = py; }
+        }
+      }
+      flock.grassX[i] = bx;
+      flock.grassY[i] = by;
+      flock.grassGain[i] = bx === x && by === y ? 0 : best - here;
+    }
+    const gain = flock.grassGain[i];
+    if (gain <= 0) return 0;
+    const far = Math.hypot(flock.grassX[i] - x, flock.grassY[i] - y) >= G.walkFrom;
+    if (!far) return 0;
+    return G.pull * smoothstep(0.2, 0.7, flock.hunger[i]) * smoothstep(0, 0.4, gain) * smoothstep(0.6, 0.2, here);
+  }
+
   update(
     flock: Flock,
     threats: readonly Threat[],
@@ -52,6 +93,8 @@ export class Perception {
     dt: number,
     flows: readonly Stimulus[] = [],
     chutes: readonly Stimulus[] = [],
+    grass: GrassField | null = null,
+    step = 0,
   ): void {
     const cfg = this.cfg;
     const P = cfg.pressure;
@@ -130,6 +173,16 @@ export class Perception {
         lure = fl.strength;
         flock.lureX[i] = r.tx;
         flock.lureY[i] = r.ty;
+      }
+      // Autosheep: hunger. Better grass round about is a lure of its own, weak beside a feed
+      // bucket; far grass is walked to, near grass grazed toward (Behaviour, the graze step)
+      if (grass && !flock.handled[i]) {
+        const pull = this.lookForGrass(flock, i, grass, obstacles, step);
+        if (pull > lure) {
+          lure = pull;
+          flock.lureX[i] = flock.grassX[i];
+          flock.lureY[i] = flock.grassY[i];
+        }
       }
       flock.lure[i] = Math.min(1, lure);
 

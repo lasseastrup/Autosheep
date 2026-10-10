@@ -265,6 +265,27 @@ multi-threading and save-safe determinism.
 - **Target scale**: hundreds of sheep in the Stone Age, 2,000–5,000 active in the Industrial
   Age, more asleep.
 
+### 4.5 Grazing (built)
+
+Grass is a mechanic, not decoration: it is the reason sheep go anywhere on their own.
+
+- **The grass field** (`src/sim/grass.ts`): grass length in every half-metre cell, 0..1, with a
+  cap per cell (bare under walls, rocks, paths, race floors and stations). It grows back from
+  bare to full in about six minutes, slowly from stubble and quickly once there is leaf.
+- **Hunger** (in the flock model, behind the contract's `setGrass`): sheep get hungry (empty to
+  starving in about 2.5 minutes); a grazing sheep eats the grass at its muzzle, more the
+  hungrier it is. On grazed ground a hungry sheep's grazing steps come sooner and head for the
+  longest grass it can see within 15 m without crossing a fence; grass worth walking to (4 m or
+  more away) pulls like a weak lure, so the group sets off for it and the flock follows. A feed
+  bucket still beats grass.
+- **What it does**: a flock left alone mows its way across a field and moves on as it runs
+  out, and a fenced flock eats its paddock down. Carrying capacity falls out of it: 20 sheep on
+  2,400 m² keep a field at about 96 %; crowd them and the field goes bare. Real rotational
+  grazing is the natural automation of this (see the M2b proposal).
+- **What you see** (`src/art/grass.ts`): volumetric pixel-art grass drawn from the same field by
+  shell texturing, so a grazed patch is visibly short and yellowed, and grazed bare it shows
+  trodden earth. Tests: `tests/grass.test.ts`.
+
 ---
 
 ## 5. Herding logistics (the heart of the game)

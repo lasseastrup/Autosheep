@@ -1,4 +1,7 @@
 import type { Obstacle, Stimulus } from '../../contract';
+import { GRASS, type GrassField } from '../../grass';
+
+const GRASS_BITE = GRASS.bite;
 import { Behaviour } from './behaviour';
 import { defaultConfig, mergeConfig, type DeepPartial, type SimConfig } from './config';
 import { Flock } from './flock';
@@ -10,6 +13,7 @@ import { Obstacles } from './obstacles';
 import { Perception, type PointStimulus, type Threat } from './perception';
 import { Rng } from './rng';
 import { Steering } from './steering';
+import { SheepState } from './types';
 
 interface Echo extends PointStimulus {
   until: number;
@@ -44,6 +48,8 @@ export class Sim {
   private readonly tracked = new Map<number, Threat>();
   /** after a startle the flock keeps fleeing from where it came for a moment */
   private echoes: Echo[] = [];
+  /** Autosheep: the world's grass, if the game has any; grazing sheep eat it */
+  grass: GrassField | null = null;
   time = 0;
   step = 0;
 
@@ -128,6 +134,24 @@ export class Sim {
     }
   }
 
+  /**
+   * Autosheep: hunger grows; a sheep grazing with its head down eats the grass at its muzzle,
+   * the hungrier the more, and a full belly takes the edge off it.
+   */
+  private graze(grass: GrassField, dt: number): void {
+    const f = this.flock;
+    const G = this.cfg.grazing;
+    for (let i = 0; i < f.count; i++) {
+      let hunger = f.hunger[i] + G.hungerRate * dt;
+      if (f.state[i] === SheepState.Graze && !f.handled[i] && f.stepRemaining[i] <= 0) {
+        const h = f.heading[i];
+        const want = GRASS_BITE * Math.min(1, 0.25 + hunger) * dt;
+        hunger -= grass.eat(f.px[i] + Math.cos(h) * G.muzzle, f.py[i] + Math.sin(h) * G.muzzle, want) / G.fill;
+      }
+      f.hunger[i] = Math.min(1, Math.max(0, hunger));
+    }
+  }
+
   /** Advance one fixed step. */
   tick(): void {
     const f = this.flock;
@@ -135,10 +159,11 @@ export class Sim {
     this.grid.build(f.px, f.py, f.count);
     computeNeighbours(f, this.grid, this.cfg);
     this.groups.update(f, this.grid, this.cfg.group.linkDist, this.cfg.group.shedTolerance, this.cfg.group.strayDist, this.obstacles);
-    this.perception.update(f, this.threats, this.startles, this.lures, this.obstacles, this.time, dt, this.flows, this.chutes);
+    this.perception.update(f, this.threats, this.startles, this.lures, this.obstacles, this.time, dt, this.flows, this.chutes, this.grass, this.step);
     if (this.cfg.behaviourEnabled) this.behaviour.update(f, this.time, dt, this.groups);
     this.steering.update(f, this.threats, dt, this.groups, this.obstacles, this.time);
     this.motion.update(f, dt);
+    if (this.grass) this.graze(this.grass, dt);
     f.group.set(this.groups.groupOf.subarray(0, f.count));
     // a startle is heard once
     this.startles.length = 0;

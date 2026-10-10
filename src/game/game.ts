@@ -20,6 +20,9 @@ import { Builder, pixelLine } from './build';
 import { FlowField } from './flowOverlay';
 import { TOOLS, type HudLayout, type ToolId } from './hud';
 import type { Pt } from '../works/devices';
+import { GrassField } from '../sim/grass';
+import { GrassView } from '../art/grass';
+import { coverWithWorks, meadowCap } from './meadowGrass';
 
 /**
  * Gafoop is always a threat, and only his proximity (and how fast he closes in) decides how
@@ -113,6 +116,12 @@ export class Game {
   readonly builder: Builder;
   private showFlow = false;
   private readonly flowField = new FlowField(WORLD.width, WORLD.height);
+  /** the meadow's grass: eaten by the flock, regrowing, drawn by `grassView` */
+  readonly grass = new GrassField(WORLD.width, WORLD.height);
+  private grassBase!: Float32Array;
+  private grassView!: GrassView;
+  /** seconds of real time, for things that should not speed up with fast-forward (the wind) */
+  private wall = 0;
   /** simulation speed: 1, 2 or 4 */
   speed = 1;
   /** show on-screen controls (set once the player touches the screen) */
@@ -146,7 +155,12 @@ export class Game {
     s.add(this.sun, this.sun.target, this.hemi);
 
     this.meadow = levelObstacles();
-    const scenery = buildScenery(this.meadow);
+    // the grass the flock eats, and the sward that shows it
+    this.grass.fill(meadowCap(this.meadow, WORLD.width, WORLD.height));
+    this.grassBase = this.grass.cap.slice();
+    this.grassView = new GrassView(this.grass);
+    s.add(this.grassView.mesh);
+    const scenery = buildScenery(this.meadow, this.grassView.groundInfo);
     s.add(scenery.group);
     this.blinkers = scenery.blinkers;
     this.worksView = new WorksView(this.works);
@@ -186,6 +200,12 @@ export class Game {
     const spec = this.spec;
     this.model = new SheepherdingV1();
     this.model.init({ seed: this.attempt, width: WORLD.width, height: WORLD.height, sheep: cluster(n, spec.flockAt.x, spec.flockAt.y, this.attempt, 1.3) });
+    // every attempt starts on a meadow nobody has grazed
+    this.grass.cap.set(this.grassBase);
+    this.grass.length.set(this.grassBase);
+    this.grass.version++;
+    this.grassDevices = '-';
+    this.model.setGrass(this.grass);
     this.gateClosed = false;
     if (this.gate) this.gate.open = 1;
     this.works.clear();
@@ -217,10 +237,18 @@ export class Game {
 
   /** works.version when the model last had its fences */
   private worksVersion = -1;
+  /** the devices the grass was last cleared for (their ids) */
+  private grassDevices = '';
 
   /** Hand the model every fence there is: the meadow's, the level's, the gate, the works. */
   private syncObstacles(): void {
     const obs: Obstacle[] = [...allObstacles(this.meadow), ...this.spec.fences, ...this.works.obstacles()];
+    // race and station floors are bare
+    const key = this.works.devices.map((d) => d.id).join(',');
+    if (key !== this.grassDevices) {
+      coverWithWorks(this.grass, this.grassBase, this.works.devices);
+      this.grassDevices = key;
+    }
     if (this.spec.gate && this.gateClosed) obs.push(this.spec.gate);
     this.model.setObstacles(obs);
     this.worksVersion = this.works.version;
@@ -335,6 +363,7 @@ export class Game {
       while (this.acc >= step) {
         this.flock.capture(this.model.out);
         this.model.step(this.stimuli());
+        this.grass.grow(step);
         this.acc -= step;
         this.works.update(this.model.out, step);
         if (this.works.version !== this.worksVersion) this.syncObstacles();
@@ -344,6 +373,9 @@ export class Game {
     }
     this.flock.update(this.model.out, this.started ? this.acc / this.model.dt : 1, this.time, sdt, g.pos, this.works);
     this.worksView.update(sdt, this.time);
+    this.wall += dt;
+    this.grassView.fitTo(this.cam.pixelsPerMetre, this.cam.pitch);
+    this.grassView.update(dt, this.wall);
     for (const f of this.floaters) f.age += dt;
     this.floaters = this.floaters.filter((f) => f.age < 1.2);
     this.gate?.update(dt);

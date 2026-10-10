@@ -220,7 +220,13 @@ export class Behaviour {
             flock.wanderHeading[i] = wrapAngle(flock.heading[i] + rng.normal() * (cfg.graze.headingNoiseDeg * Math.PI / 180));
             // grazing drifts toward a lure even before anyone sets off for it
             if (lure > 0.02) flock.wanderHeading[i] = Math.atan2(flock.lureY[i] - flock.py[i], flock.lureX[i] - flock.px[i]);
-            flock.nextStepAt[i] = time + rng.range(cfg.graze.stepInterval[0], cfg.graze.stepInterval[1]) * flock.grazeBias[i];
+            // Autosheep: and toward longer grass nearby, sooner the hungrier and barer it is here
+            let wait = rng.range(cfg.graze.stepInterval[0], cfg.graze.stepInterval[1]) * flock.grazeBias[i];
+            if (flock.grassGain[i] > 0) {
+              if (lure <= 0.02) flock.wanderHeading[i] = Math.atan2(flock.grassY[i] - flock.py[i], flock.grassX[i] - flock.px[i]);
+              wait /= 1 + cfg.grazing.restless * flock.hunger[i] * (1 - flock.grassHere[i]);
+            }
+            flock.nextStepAt[i] = time + wait;
           }
           break;
         }

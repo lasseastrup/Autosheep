@@ -262,6 +262,13 @@ void main() {
   the terrain's world-space colour or noise function and the same ramp and cloud-shadow logic. Wind sways in whole
   texels: snap the tip offset with `floor(offset*uRes)/uRes`. Keep grass out of the G-buffer (layer 1). The Unity
   recreation draws about 35k instances and uses accent sprites (flowers) at a fixed frequency.
+  - *Update (grazing):* the game uses **shell texturing** instead (`src/art/grass.ts`). The grass has to show a field
+    the flock eats, and a stack of 6–9 ground layers, each discarding all but the blades at its height, reads a height
+    texture for free. At 640×360 a blade is 2–4 px, so the cost is fill rate, about 1.3M cheap fragments a frame;
+    Apple's warnings about `discard` on tile-based GPUs bite at native resolution, not here. What made it read as
+    pixel art: a fixed blade size in metres, colour chosen per blade (not per pixel) in three exact palette steps
+    (darker roots, body, lighter tips on the taller blades), a solid bottom layer, shadows sampled at the root, wind
+    stepped at 10 Hz and rounded to whole pixels, and grass pixels flagged so the outline pass skips them.
 - **Terrain.** t3ssel8r-like terrain is reported to be marching-squares cliffs over a quantized heightmap, one layer per
   height. That fits our 0.8165-unit tiers.
 - **Water.** Use flat ortho-friendly water. Foam = `step(viewZ_scene − viewZ_water, 0.15)` gives a 1–2 texel shoreline band.

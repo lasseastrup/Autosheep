@@ -104,6 +104,13 @@ export class Flock {
   readonly chuteY: Float32Array;
   readonly chuteDrive: Float32Array;
   readonly chuteRoom: Float32Array;
+  /** Autosheep: grazing. Hunger (0 full, 1 starving); the grass at my muzzle; the best grass I
+   * last saw round me, and how much longer it is than mine */
+  readonly hunger: Float32Array;
+  readonly grassHere: Float32Array;
+  readonly grassX: Float32Array;
+  readonly grassY: Float32Array;
+  readonly grassGain: Float32Array;
 
   // context maps (scratch, slots per sheep)
   readonly interest: Float32Array;
@@ -151,6 +158,7 @@ export class Flock {
     this.fenced = new Uint8Array(capacity);
     this.handled = new Uint8Array(capacity);
     this.chuteX = f(); this.chuteY = f(); this.chuteDrive = f(); this.chuteRoom = f();
+    this.hunger = f(); this.grassHere = f().fill(1); this.grassX = f(); this.grassY = f(); this.grassGain = f();
     this.interest = new Float32Array(capacity * slots);
     this.danger = new Float32Array(capacity * slots);
   }
@@ -171,6 +179,8 @@ export class Flock {
       this.fearDecay[i] = rng.range(p.fearDecay[0], p.fearDecay[1]);
       this.speedMult[i] = rng.range(p.speedMult[0], p.speedMult[1]) * Math.pow(1 / this.scale[i], 0.3);
       this.grazeBias[i] = rng.range(p.grazeBias[0], p.grazeBias[1]);
+      // (not drawn from rng, so adding grazing left every other draw where it was)
+      this.hunger[i] = 0.2 + 0.3 * ((Math.sin(i * 12.9898 + 4.1) * 43758.5453) % 1 + 1) % 1;
 
       const x = Math.min(cfg.world.width - 1, Math.max(1, at[i].x));
       const y = Math.min(cfg.world.height - 1, Math.max(1, at[i].y));
