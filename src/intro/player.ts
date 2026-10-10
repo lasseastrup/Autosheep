@@ -57,6 +57,20 @@ export class IntroPlayer {
     };
   }
 
+  /**
+   * Compile every set's shaders ahead of time (behind the start screen), one set per animation
+   * frame so the screen keeps moving, instead of stalling at each new shot.
+   */
+  async warmUp(): Promise<void> {
+    const seen = new Set<THREE.Object3D>();
+    for (const set of Object.values(this.sets)) {
+      if (!set.scene || !set.camera || seen.has(set.scene)) continue;
+      seen.add(set.scene);
+      await new Promise((r) => requestAnimationFrame(r));
+      await this.pr.warm(set.scene, set.camera);
+    }
+  }
+
   voiceUrlMap(): Record<string, string> {
     const out: Record<string, string> = {};
     for (const [path, url] of Object.entries(voiceUrls)) out[path.split('/').pop()!.replace('.mp3', '')] = url;

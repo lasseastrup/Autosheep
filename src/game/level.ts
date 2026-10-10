@@ -174,16 +174,12 @@ export class GateMesh {
 export function buildScenery(l: LevelObstacles): { group: THREE.Group; blinkers: THREE.Mesh[] } {
   const g = new THREE.Group();
   const blinkers: THREE.Mesh[] = [];
-  const ground = terrain(320, 160, heightAt, {
+  // terrain() is centred on the origin; the meadow spans 0..120 x 0..90, so sample the heights
+  // where each vertex will end up and then move the whole thing over
+  const ground = terrain(320, 160, (x, z) => heightAt(x + WORLD.width / 2, z + WORLD.height / 2), {
     material: groundMaterial({ path: [3, 0.05, 46], pathColor: C.khaki, pathEdge: C.moss }),
   });
-  // terrain() is centred on the origin; the meadow spans 0..120 x 0..90
   ground.geometry.translate(WORLD.width / 2, 0, WORLD.height / 2);
-  // re-sample heights after the move
-  const pos = ground.geometry.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, heightAt(pos.getX(i), pos.getZ(i)));
-  pos.needsUpdate = true;
-  ground.geometry.computeVertexNormals();
   g.add(ground);
 
   const dress = meadowDressing(150, 9000, () => 0, 17, (x, z) => {
@@ -213,14 +209,33 @@ export function buildScenery(l: LevelObstacles): { group: THREE.Group; blinkers:
   }
 
   // outside the walls: woods and a farm the humans left behind
+  // A handful of tree and bush shapes, built once and placed many times at random sizes and
+  // turns: generating every lumpy tree afresh was most of the time it took to build the level.
   const rng = new Rng(21);
+  const shapes = new Map<string, THREE.Object3D>();
+  const shape = (key: string, make: () => THREE.Object3D) => {
+    let p = shapes.get(key);
+    if (!p) shapes.set(key, (p = make()));
+    return p.clone();
+  };
   for (let i = 0; i < 140; i++) {
     const a = rng.range(0, Math.PI * 2);
     const x = W / 2 + Math.cos(a) * rng.range(70, 120);
     const z = H / 2 + Math.sin(a) * rng.range(55, 100);
     if (x > -4 && x < W + 4 && z > -4 && z < H + 4) continue;
-    const t = rng.next() < 0.5 ? tree(100 + i, rng.range(0.9, 1.5), rng.next() < 0.4 ? 'pine' : 'round') : bush(100 + i, rng.range(1, 1.8));
+    const v = i % 5;
+    let t: THREE.Object3D;
+    if (rng.next() < 0.5) {
+      const s = rng.range(0.9, 1.5);
+      const kind = rng.next() < 0.4 ? 'pine' : 'round';
+      t = shape(`${kind}${v}`, () => tree(100 + v, 1, kind));
+      t.scale.setScalar(s);
+    } else {
+      t = shape(`bush${v}`, () => bush(200 + v, 1));
+      t.scale.setScalar(rng.range(1, 1.8));
+    }
     t.position.set(x, heightAt(x, z), z);
+    t.rotation.y = rng.range(0, Math.PI * 2);
     g.add(t);
   }
   const fh = farmhouse();

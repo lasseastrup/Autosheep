@@ -336,6 +336,9 @@ export class PixelRenderer {
     this.padW = width + MARGIN * 2;
     this.padH = height + MARGIN * 2;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    // checking each shader for errors on first use blocks until the driver has compiled it;
+    // worth it while developing, a needless stall in a release build
+    this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
     this.renderer.setPixelRatio(1);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
@@ -558,6 +561,35 @@ export class PixelRenderer {
     this.blit(this.pixelMat, this.pixelRT);
 
     this.present();
+  }
+
+  /**
+   * Compile the shaders a scene will need, without blocking where the browser can compile in
+   * parallel (KHR_parallel_shader_compile). Shader compilation on first draw is what makes a new
+   * scene stall for a second or more, so call this ahead of time (for example behind a menu).
+   * Covers the colour pass and the outline pass, which draws every outlined mesh with one
+   * override material; the shadow pass's small depth shaders still compile on first use.
+   */
+  async warm(scene: THREE.Object3D, camera: THREE.Camera): Promise<void> {
+    const r = this.renderer;
+    await r.compileAsync(scene, camera);
+    // compile() ignores scene.overrideMaterial, so lend each outlined mesh the outline material
+    // just for the (synchronous) compile call
+    const lent: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];
+    scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.layers.isEnabled(0)) {
+        lent.push([m, m.material]);
+        m.material = this.normalMat;
+      }
+    });
+    let ready: Promise<unknown>;
+    try {
+      ready = r.compileAsync(scene, camera);
+    } finally {
+      for (const [m, mat] of lent) m.material = mat;
+    }
+    await ready;
   }
 
   /** Screen pass only (also used for overlay-only frames). */

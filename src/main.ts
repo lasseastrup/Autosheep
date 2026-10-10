@@ -37,10 +37,23 @@ function fitTo(resize: (w: number, h: number, dpr: number, fixed?: number) => vo
   };
 }
 
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+/**
+ * One AudioContext for the whole page. Created early, suspended (browsers allow that), so the
+ * voices can be decoded behind the start screen; a click then only has to resume it, which
+ * must happen inside the click handler itself.
+ */
+let audioCtx: AudioContext | null = null;
+function audioContext(): AudioContext {
+  audioCtx ??= new AudioContext({ latencyHint: 'interactive' });
+  return audioCtx;
+}
+
 async function boot(): Promise<void> {
   if (params.has('game')) {
     const fonts = await loadFonts();
-    startGame(fonts, null);
+    void startGame(fonts, null);
     return;
   }
   player = new IntroPlayer(canvas);
@@ -58,11 +71,29 @@ async function boot(): Promise<void> {
   // a title-ish start screen: audio needs a user gesture
   const startAt = +(params.get('t') ?? 0);
   let started = false;
+  /** set while a click waits for something still loading; the start screen keeps moving */
+  let loading = false;
+
+  // Everything slow happens behind the start screen, not after the click: decoding the
+  // voices, compiling the intro's shaders, then building and warming the game. Compiling
+  // shaders on first use is what used to freeze the screen for a second or more.
+  const voices = nextFrame().then(() => player.prepareAudio(audioContext())).then((a) => (performance.mark('intro:voices'), a));
+  const introWarm = player.warmUp().then(() => performance.mark('intro:warm'));
+  let introChosen = false;
+  void introWarm.then(() => {
+    // building the game would stutter the film, so if the intro is already playing it waits
+    // for the film to end
+    if (!introChosen) void prepareGame(player.fonts);
+  });
   // the start screen is the title diorama, idling, with two buttons over it
   const title = player.tl.shots.find((s) => s.name === 'title')!;
   const prompt = (now: number) => (g: CanvasRenderingContext2D) => {
     const f = player.fonts;
     const hover = pointerAt ? hit(pointerAt.x, pointerAt.y) : null;
+    if (loading) {
+      loadingLabel(g, f, now);
+      return;
+    }
     button(g, f, WATCH, 'WATCH THE INTRO', 'ENTER', hover === WATCH || (hover === null && Math.floor(now * 2) % 2 === 0), C.straw);
     button(g, f, SKIP, 'SKIP TO THE GAME', 'ESC', hover === SKIP, C.lime);
     f.tiny.draw(g, 'SOUND ON  -  THE INTRO IS 3 MINUTES  -  ESC SKIPS IT AT ANY TIME', 240, 248, { color: C.fog, align: 'center' });
@@ -75,7 +106,7 @@ async function boot(): Promise<void> {
     player.subtitles = subs;
   };
   const idle = (now: number) => {
-    if (started) return;
+    if (started && !loading) return;
     drawStart(now / 1000);
     requestAnimationFrame(idle);
   };
@@ -94,14 +125,19 @@ async function boot(): Promise<void> {
       skip = hit(p.x, p.y) === SKIP;
     }
     started = true;
-    player.overlayHook = null;
-    const ctx = new AudioContext({ latencyHint: 'interactive' });
-    await ctx.resume();
+    // resume inside the gesture, before any await, or phones keep the audio muted
+    const ctx = audioContext();
+    void ctx.resume();
+    loading = true;
     if (skip) {
-      startGame(player.fonts, ctx);
+      await startGame(player.fonts, ctx, () => (loading = false));
       return;
     }
-    const audio = await player.prepareAudio(ctx);
+    introChosen = true;
+    const audio = await voices;
+    await introWarm;
+    loading = false;
+    player.overlayHook = null;
     run(audio, startAt, ctx);
   };
   window.addEventListener('pointermove', (e) => (pointerAt = toIntro(e)));
@@ -140,14 +176,16 @@ function button(g: CanvasRenderingContext2D, f: Fonts, b: Box, label: string, ke
 function run(audio: AudioEngine, offset: number, ctx: AudioContext): void {
   const dur = player.tl.duration;
   audio.startRealtime(offset);
-  let leaving = false;
+  /** film time at which we left for the game (the picture holds there while it loads) */
+  let leftAt: number | null = null;
+  let gone = false;
   const toGame = () => {
-    if (leaving) return;
-    leaving = true;
+    if (leftAt !== null) return;
+    leftAt = Math.min(audio.now(), dur - 0.001);
     audio.stop();
     window.removeEventListener('keydown', onKey);
     window.removeEventListener('pointerdown', onPointer);
-    startGame(player.fonts, ctx);
+    void startGame(player.fonts, ctx, () => (gone = true));
   };
   // Esc, or the corner button, skips straight to the game; once the film is over, any key
   // or click does
@@ -175,15 +213,33 @@ function run(audio: AudioEngine, offset: number, ctx: AudioContext): void {
     g.fillRect(b.x, b.y + b.h - 1, b.w, 1);
     f.small.draw(g, 'SKIP  ESC', b.x + b.w / 2, b.y + 3, { color: lit ? C.lime : C.fog, align: 'center' });
   };
-  const tick = () => {
-    if (leaving) return;
+  const tick = (now: number) => {
+    if (gone) return;
+    if (leftAt !== null) {
+      player.overlayHook = (g) => loadingLabel(g, player.fonts, now / 1000);
+      player.frame(Math.max(0, leftAt));
+      requestAnimationFrame(tick);
+      return;
+    }
     const T = Math.min(audio.now(), dur - 0.001);
     const ended = audio.now() >= dur;
+    // the film is over: now is the time to build the game, behind the end card
+    if (ended) void prepareGame(player.fonts);
     player.overlayHook = ended ? endPrompt(audio.now() - dur) : skipButton;
     player.frame(Math.max(0, T));
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+}
+
+function loadingLabel(g: CanvasRenderingContext2D, f: Fonts, now: number): void {
+  const text = 'LOADING' + '.'.repeat(1 + (Math.floor(now * 3) % 3));
+  g.fillStyle = C.black;
+  g.fillRect(190, 220, 100, 20);
+  g.fillStyle = C.straw;
+  g.fillRect(190, 220, 100, 1);
+  g.fillRect(190, 239, 100, 1);
+  f.small.draw(g, text, 202, 226, { color: C.straw });
 }
 
 const endPrompt = (t: number) => (g: CanvasRenderingContext2D) => {
@@ -200,21 +256,52 @@ const endPrompt = (t: number) => (g: CanvasRenderingContext2D) => {
   if (Math.floor(t * 2) % 2 === 0) f.body.draw(g, text, 240, 241, { color: C.lime, align: 'center' });
 };
 
-/** Replace the intro with the game. `ctx` is null when no user gesture has happened yet. */
-function startGame(fonts: Fonts, ctx: AudioContext | null): void {
+/** The game, built and warmed on a hidden canvas so that switching to it is instant. */
+let preparing: Promise<{ game: Game; canvas: HTMLCanvasElement }> | null = null;
+function prepareGame(fonts: Fonts): Promise<{ game: Game; canvas: HTMLCanvasElement }> {
+  preparing ??= (async () => {
+    await nextFrame();
+    const gc = document.createElement('canvas');
+    gc.style.cursor = 'none';
+    gc.style.display = 'none';
+    stage.appendChild(gc);
+    performance.mark('game:build');
+    const game = new Game(gc, fonts);
+    fitGame(game)();
+    performance.mark('game:built');
+    await nextFrame();
+    await game.warm();
+    performance.mark('game:warm');
+    await nextFrame();
+    // one real frame compiles what warm() cannot reach (shadow depth, post-processing)
+    game.frame(0);
+    performance.mark('game:ready');
+    return { game, canvas: gc };
+  })();
+  return preparing;
+}
+
+function fitGame(game: Game): () => void {
+  return fitTo((w, h, d, f) => {
+    game.pr.resize(w, h, d, f);
+    game.portrait = window.innerHeight > window.innerWidth;
+  }, 0);
+}
+
+/**
+ * Replace the intro with the game, once it is ready. `ctx` is null when no user gesture has
+ * happened yet; `ready` is called just before the intro's canvas goes away.
+ */
+async function startGame(fonts: Fonts, ctx: AudioContext | null, ready?: () => void): Promise<void> {
+  const { game, canvas: gc } = await prepareGame(fonts);
+  ready?.();
   if (player) {
     player.pr.renderer.dispose();
     player.pr.renderer.forceContextLoss();
   }
   canvas.remove();
-  const gc = document.createElement('canvas');
-  gc.style.cursor = 'none';
-  stage.appendChild(gc);
-  const game = new Game(gc, fonts);
-  const fit = fitTo((w, h, d, f) => {
-    game.pr.resize(w, h, d, f);
-    game.portrait = window.innerHeight > window.innerWidth;
-  }, 0);
+  gc.style.display = '';
+  const fit = fitGame(game);
   fit();
   window.addEventListener('resize', fit);
   hint.textContent = '';
@@ -230,7 +317,9 @@ function startGame(fonts: Fonts, ctx: AudioContext | null): void {
     const first = () => {
       window.removeEventListener('pointerdown', first);
       window.removeEventListener('keydown', first);
-      void begin(new AudioContext({ latencyHint: 'interactive' }));
+      const c = audioContext();
+      void c.resume();
+      void begin(c);
     };
     window.addEventListener('pointerdown', first);
     window.addEventListener('keydown', first);

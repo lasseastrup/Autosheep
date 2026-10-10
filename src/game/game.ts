@@ -153,6 +153,12 @@ export class Game {
     this.model.setObstacles(obs);
   }
 
+  /** Compile the shaders ahead of the first frame (see PixelRenderer.warm). */
+  async warm(): Promise<void> {
+    this.cam.update(0);
+    await this.pr.warm(this.scene, this.cam.camera);
+  }
+
   /** Start the clock and the audio (needs a user gesture for the AudioContext). */
   begin(audio: GameAudio | null): void {
     this.audio = audio;
