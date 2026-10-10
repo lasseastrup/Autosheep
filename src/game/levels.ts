@@ -3,7 +3,7 @@
  * asks for. Sim coordinates.
  */
 import type { Obstacle } from '../sim/contract';
-import type { Pt } from '../works/devices';
+import { STATION_LEN, type Pt } from '../works/devices';
 import type { Works } from '../works/works';
 import { hurdle } from './level';
 
@@ -36,6 +36,8 @@ export interface LevelSpec {
   works?: (w: Works) => void;
   /** gaps in the level's fences a race can join up to */
   ports?: Pt[];
+  /** a layout that wins the level, for the SOLVE cheat (added to `works`) */
+  solution?: (w: Works) => void;
   /** the verdict card: the result (with {time}) and the Bureau's remark */
   verdict: [string, string];
   /** what Gafoop says first */
@@ -85,6 +87,8 @@ export const FIRST_PEN: LevelSpec = {
 export const PASTURE: Rect = { x0: 8, y0: 30, x1: 34, y1: 62 };
 export const PASTURE_OUT = 38;
 export const PASTURE_IN = 54;
+const SHED_X = 48;
+const SPINDLE_X = 66;
 
 export const FIRST_HERDWAY: LevelSpec = {
   id: 2,
@@ -100,10 +104,25 @@ export const FIRST_HERDWAY: LevelSpec = {
   goal: 30,
   // Blorp's supply drop: a shearing shed and a spindle hut, waiting to be joined up
   works: (w) => {
-    w.add({ kind: 'shed', at: { x: 48, y: PASTURE_OUT }, dir: 0 });
-    w.add({ kind: 'spindle', at: { x: 66, y: PASTURE_OUT }, dir: 0 });
+    w.add({ kind: 'shed', at: { x: SHED_X, y: PASTURE_OUT }, dir: 0 });
+    w.add({ kind: 'spindle', at: { x: SPINDLE_X, y: PASTURE_OUT }, dir: 0 });
   },
   ports: [{ x: PASTURE.x1, y: PASTURE_OUT }, { x: PASTURE.x1, y: PASTURE_IN }],
+  // the reference loop (works/layouts.ts) fitted to this field: races joining pasture, shed and
+  // spindle, a long way home under a rack, a flap into the pasture, a lick in the race mouth
+  solution: (w) => {
+    const x = PASTURE.x1;
+    const out = PASTURE_OUT;
+    const home = PASTURE_IN;
+    const half = STATION_LEN / 2;
+    const east = SPINDLE_X + half + 6;
+    w.add({ kind: 'lane', points: [{ x, y: out }, { x: SHED_X - half, y: out }] });
+    w.add({ kind: 'lane', points: [{ x: SHED_X + half, y: out }, { x: SPINDLE_X - half, y: out }] });
+    w.add({ kind: 'lane', points: [{ x: SPINDLE_X + half, y: out }, { x: east, y: out }, { x: east, y: home }, { x, y: home }] });
+    w.add({ kind: 'rack', at: { x: east, y: (out + home) / 2 }, angle: Math.PI / 2 });
+    w.add({ kind: 'flap', at: { x: x + 1.5, y: home }, angle: Math.PI });
+    w.add({ kind: 'lick', at: { x: x + 2.5, y: out } });
+  },
   opening: 'Thirty skeins of yarn, says Form 12-C. Build races: pasture, shed, spindle, rack, home.',
   verdict: ['{n} skeins of yarn in {time}.', 'INDUSTRY IS PROVEN. THE AUDITOR YAWNS APPROVINGLY.'],
 };

@@ -482,6 +482,7 @@ export class Game {
       case 'perf': inp.hits.push('f'); break;
       case 'perfTest': inp.hits.push('p'); break;
       case 'skip': inp.hits.push(']'); break;
+      case 'solve': inp.hits.push('\\'); break;
       case 'next': inp.hits.push('l'); break;
       case 'keep': inp.hits.push('k'); break;
       case 'build': inp.hits.push('b'); break;
@@ -512,6 +513,10 @@ export class Game {
       if (k === ']') {
         this.load(this.hasNext ? this.spec.id + 1 : LEVELS[0].id);
         this.quip('start', 0.8, false);
+        continue;
+      }
+      if (k === '\\') {
+        this.solve();
         continue;
       }
       const card = this.won && !this.won.dismissed;
@@ -560,6 +565,17 @@ export class Game {
       // a herdway goes on after the verdict: the card can be put away
       if (card && k === 'k' && this.spec.kind === 'herdway') this.won = { ...this.won!, dismissed: true };
     }
+  }
+
+  /** The other cheat: whatever has been built gives way to the level's winning layout. */
+  private solve(): void {
+    if (!this.spec.solution) return;
+    for (const d of [...this.works.devices]) this.works.remove(d.id);
+    this.spec.works?.(this.works);
+    this.spec.solution(this.works);
+    this.building = false;
+    this.builder.cancel();
+    this.gafoop.say('Blueprints from the Bureau. Nobody tell the Auditor.', this.time, 3);
   }
 
   private afterStep(): void {

@@ -16,7 +16,7 @@ export const TOOL_LABEL: Record<ToolId, string> = {
 
 export type ButtonId =
   | 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'next' | 'keep' | 'perf' | 'perfTest'
-  | 'skip' | 'speed' | 'build' | 'flow' | 'finish' | 'cancel' | 'rotate' | `tool:${ToolId}`;
+  | 'skip' | 'solve' | 'speed' | 'build' | 'flow' | 'finish' | 'cancel' | 'rotate' | `tool:${ToolId}`;
 export interface Button {
   id: ButtonId;
   x: number;
@@ -52,8 +52,10 @@ export function hudButtons(L: HudLayout): Button[] {
       { id: 'flow', x: W - 50, y: 44, w: 44, h: 16 },
     );
   }
-  // with the readout showing, buttons under it run the perf test and skip to the next level
+  // with the readout showing, buttons under it run the perf test and the cheats: skip to the
+  // next level, and (herdways) build the level's winning layout
   if (L.perf) b.push(PERF_TEST, SKIP);
+  if (L.perf && L.kind === 'herdway') b.push(SOLVE);
   if (L.won) {
     if (L.won.age > 1.6) {
       const n = L.won.buttons.length;
@@ -92,6 +94,7 @@ export function hudButtons(L: HudLayout): Button[] {
 
 const PERF_TEST: Button = { id: 'perfTest', x: 6, y: 68, w: 124, h: 13 };
 const SKIP: Button = { id: 'skip', x: 134, y: 68, w: 86, h: 13 };
+const SOLVE: Button = { id: 'solve', x: 224, y: 68, w: 56, h: 13 };
 
 export function buttonAt(buttons: Button[], x: number, y: number): ButtonId | null {
   // later buttons sit on top
@@ -159,6 +162,11 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
     const k = SKIP;
     panel(g, k.x, k.y, k.w, k.h, { fill: s.held.has('skip') ? C.coal : C.ink, border: C.gold, shadow: null });
     f.small.draw(g, s.touch ? 'SKIP LEVEL' : 'SKIP LEVEL []]', k.x + 5, k.y + 3, { color: C.gold });
+    if (s.layout.kind === 'herdway') {
+      const v = SOLVE;
+      panel(g, v.x, v.y, v.w, v.h, { fill: s.held.has('solve') ? C.coal : C.ink, border: C.gold, shadow: null });
+      f.small.draw(g, s.touch ? 'SOLVE' : 'SOLVE [\\]', v.x + 5, v.y + 3, { color: C.gold });
+    }
   }
 
   // --- gate (or speed) and megaphone

@@ -56,8 +56,9 @@ and under it a RUN PERF TEST button (or `P`): for half a minute the game turns t
 parts of a frame off one at a time (shadow pass, outline pass, bloom, palette, HUD, grass,
 full-resolution upscale, then all of them, then drawing nothing) and shows the frame rate of
 each with the device and GPU, so one screenshot from a slow device says where its time goes.
-Beside it, SKIP LEVEL (or `]`) is the cheat: straight on to the next level, won or not, and
-from the last level round to the first.
+Beside it are two cheats. SKIP LEVEL (or `]`) goes straight on to the next level, won or not,
+and from the last level round to the first. On a herdway level, SOLVE (or `\`) takes down
+whatever has been built and puts up a layout that wins the level (a test checks that it does).
 
 **If something stalls.** Every slow piece of start-up is a named loading step. Until the menu is
 up, a loading panel lists them, so a frozen screen shows the step that froze it (the yellow
