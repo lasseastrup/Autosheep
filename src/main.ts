@@ -11,6 +11,7 @@ import { Game } from './game/game';
 import { GameAudio } from './game/gameAudio';
 import { W as GW, H as GH, type ButtonId } from './game/hud';
 import { loader } from './loading';
+import { PixelRenderer } from './engine/pixelRenderer';
 
 /**
  * Entry point. Plays the intro cutscene in real time (synced to the audio clock), then the
@@ -23,6 +24,8 @@ import { loader } from './loading';
  *   ?capture   offline frame/audio rendering API on window.__autosheep
  */
 const params = new URLSearchParams(location.search);
+// the movie and screenshot tools read frames back from the canvas
+PixelRenderer.keepFrames = params.has('capture') || params.has('manual');
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 const stage = document.getElementById('stage') as HTMLDivElement;
 const hint = document.getElementById('hint') as HTMLDivElement;

@@ -7,7 +7,7 @@ export const W = 640;
 export const H = 360;
 
 /** Things on screen that can be clicked or tapped. Each one does what a key does. */
-export type ButtonId = 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'perf';
+export type ButtonId = 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'perf' | 'perfTest';
 export interface Button {
   id: ButtonId;
   x: number;
@@ -17,7 +17,7 @@ export interface Button {
 }
 
 /** Layout of the clickable parts of the HUD; drawing and hit-testing both use it. */
-export function hudButtons(touch: boolean, wonAge: number | null): Button[] {
+export function hudButtons(touch: boolean, wonAge: number | null, perf = false): Button[] {
   const b: Button[] = [
     // the objective panel toggles the frame-rate readout
     { id: 'perf', x: 6, y: 6, w: 150, h: 46 },
@@ -25,6 +25,8 @@ export function hudButtons(touch: boolean, wonAge: number | null): Button[] {
     { id: 'gate', x: W - 96, y: 6, w: 90, h: 15 },
     { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 },
   ];
+  // with the readout showing, a button under it runs the perf test
+  if (perf) b.push(PERF_TEST);
   if (wonAge !== null) {
     if (wonAge > 1.6) b.push({ id: 'again', x: W / 2 - 156, y: 206, w: 148, h: 18 }, { id: 'bigger', x: W / 2 + 8, y: 206, w: 148, h: 18 });
     return b;
@@ -42,6 +44,8 @@ export function hudButtons(touch: boolean, wonAge: number | null): Button[] {
   }
   return b;
 }
+
+const PERF_TEST: Button = { id: 'perfTest', x: 6, y: 68, w: 124, h: 13 };
 
 export function buttonAt(buttons: Button[], x: number, y: number): ButtonId | null {
   // later buttons sit on top
@@ -94,6 +98,9 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
     const text = `${Math.round(p.fps)} FPS  ${p.ms.toFixed(1)} MS  ${p.calls} CALLS  ${Math.round(p.tris / 1000)}K TRIS`;
     rect(g, 6, 54, f.small.measure(text) + 8, 12, C.black);
     f.small.draw(g, text, 10, 56, { color: p.fps >= 55 ? C.lime : p.fps >= 40 ? C.gold : C.scarlet });
+    const b = PERF_TEST;
+    panel(g, b.x, b.y, b.w, b.h, { fill: s.held.has('perfTest') ? C.coal : C.ink, border: C.gold, shadow: null });
+    f.small.draw(g, s.touch ? 'RUN PERF TEST' : 'RUN PERF TEST [P]', b.x + 5, b.y + 3, { color: C.gold });
   }
 
   // --- gate and megaphone

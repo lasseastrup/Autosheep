@@ -11,6 +11,7 @@ import { FlockView } from './flockView';
 import { GafoopActor } from './gafoopActor';
 import { GameAudio } from './gameAudio';
 import { buttonAt, drawHud, H, hudButtons, W, type ButtonId, type HudState } from './hud';
+import { PerfTest, type Variant } from './perfTest';
 import { allObstacles, buildScenery, FLOCK_AT, GAFOOP_AT, GATE, GateMesh, levelObstacles, PEN, WORLD, type LevelObstacles } from './level';
 
 /**
@@ -93,6 +94,10 @@ export class Game {
   /** frame-rate readout (F, or click the objective panel); fps and ms come from the main loop */
   showPerf = false;
   readonly perf = { fps: 0, ms: 0, calls: 0, tris: 0 };
+  private test: PerfTest | null = null;
+  /** main-thread time of the last frame, for the perf test */
+  private frameMs = 0;
+  private hideHud = false;
   /** called once a frame has been drawn (for tooling) */
   onFrame: (() => void) | null = null;
 
@@ -199,6 +204,9 @@ export class Game {
 
   /** Advance one frame, and draw it unless `draw` is false (tooling fast-forward). */
   frame(dt: number, draw = true): void {
+    const t0 = performance.now();
+    this.test?.tick(dt, this.frameMs);
+    if (this.test && !this.test.draw) draw = false;
     // the first animation frame can arrive stamped before the loop started
     dt = Math.max(0, Math.min(0.1, dt));
     const inp = this.input;
@@ -266,6 +274,54 @@ export class Game {
     }
     inp.hits.length = 0;
     this.onFrame?.();
+    this.frameMs = performance.now() - t0;
+  }
+
+  /**
+   * Measure the frame rate with the expensive parts of a frame turned off one at a time, and
+   * show the results (see perfTest.ts). Takes half a minute.
+   */
+  startPerfTest(): void {
+    if (this.test && !this.test.done) return;
+    const pr = this.pr;
+    const post = { ...pr.post };
+    // the grass and flowers: scattered instances that cast no shadow
+    const grass: THREE.Object3D[] = [];
+    this.scene.traverse((o) => {
+      if ((o as THREE.InstancedMesh).isInstancedMesh && !o.castShadow) grass.push(o);
+    });
+    let scale = pr.scale;
+    const off: Record<string, (on: boolean) => void> = {
+      'no shadow pass': (on) => (pr.skip.shadows = on),
+      'no outline pass': (on) => (pr.skip.outline = on),
+      'no bloom': (on) => (pr.post.bloom = on ? 0 : post.bloom),
+      'no palette': (on) => (pr.post.quantize = on ? 0 : post.quantize),
+      'no HUD': (on) => (this.hideHud = on),
+      'no grass': (on) => grass.forEach((g) => (g.visible = !on)),
+      'screen at 1x': (on) => {
+        // the low-res picture stretched by the browser instead of by the screen pass
+        if (on) scale = pr.scale;
+        pr.scale = on ? 1 : scale;
+        pr.renderer.setSize(W * pr.scale, H * pr.scale, false);
+      },
+    };
+    const variants: Variant[] = [
+      { name: 'everything on' },
+      ...Object.entries(off).map(([name, apply]) => ({ name, apply })),
+      { name: 'all of those off', apply: (on) => Object.values(off).forEach((f) => f(on)) },
+      { name: 'nothing drawn', draw: false },
+    ];
+    const gl = pr.renderer.getContext();
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    const c = pr.renderer.domElement;
+    const device = [
+      navigator.userAgent.replace(/^Mozilla\/5\.0 |AppleWebKit\/[\d.]+ \(KHTML, like Gecko\) /g, ''),
+      `GPU: ${gpu}`,
+      `SCREEN ${innerWidth}x${innerHeight} AT ${devicePixelRatio}X · CANVAS ${c.width}x${c.height}`,
+      `${this.flockSize} SHEEP · ${Math.round(this.perf.tris / 1000)}K TRIS · ${this.perf.calls} DRAW CALLS`,
+    ];
+    this.test = new PerfTest(variants, device);
   }
 
   /**
@@ -297,7 +353,7 @@ export class Game {
   /** Which on-screen button, if any, is at this overlay position. */
   buttonAt(x: number, y: number): ButtonId | null {
     if (!this.started) return null;
-    return buttonAt(hudButtons(this.touch, this.won ? this.time - this.won.at : null), x, y);
+    return buttonAt(hudButtons(this.touch, this.won ? this.time - this.won.at : null, this.showPerf), x, y);
   }
 
   /** A button pressed: it does what its key does. FEED acts while held. */
@@ -315,6 +371,7 @@ export class Game {
       case 'again': inp.hits.push('r'); break;
       case 'bigger': inp.hits.push('n'); break;
       case 'perf': inp.hits.push('f'); break;
+      case 'perfTest': inp.hits.push('p'); break;
     }
   }
 
@@ -329,6 +386,7 @@ export class Game {
       if (k === 'e') this.cam.rotate(1);
       if (k === 'h') this.showHelp = !this.showHelp;
       if (k === 'f') this.showPerf = !this.showPerf;
+      if (k === 'p') this.startPerfTest();
       if (!this.started) continue;
       if (k === 'g') this.toggleGate();
       if (k === ' ' && this.time - this.honkAt >= HONK.cooldown) {
@@ -400,6 +458,8 @@ export class Game {
 
   private drawOverlay(dt: number): void {
     const g = this.pr.clearOverlay();
+    // nothing marked, nothing uploaded
+    if (this.hideHud) return;
     this.pr.markOverlay();
     void dt;
 

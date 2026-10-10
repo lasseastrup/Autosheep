@@ -6,6 +6,7 @@ import { Sheep } from '../art/sheep';
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const params = new URLSearchParams(location.search);
+PixelRenderer.keepFrames = true;
 const pr = new PixelRenderer(canvas, 480, 270);
 pr.setPalette(params.has('edg') ? ENDESGA32 : RESURRECT64);
 pr.resize(innerWidth, innerHeight, 1);

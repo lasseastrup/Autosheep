@@ -5,6 +5,7 @@ import { mesh } from '../art/geo';
 import { bucket } from '../art/props';
 import { C } from '../engine/palette';
 import { glow, noOutline, toon } from '../engine/toon';
+import { bakeRigid } from '../engine/bake';
 
 export type Tool = 'idle' | 'bucket';
 
@@ -69,6 +70,9 @@ export class GafoopActor {
     this.hover.traverse((o) => {
       if ((o as THREE.Mesh).isMesh && !o.layers.isEnabled(1)) o.castShadow = true;
     });
+    // sixty-odd parts, each drawn three times a frame (shadow, outline, colour): merge the
+    // ones that move together
+    bakeRigid(this.root, [this.hover, this.pail, ...g.moving]);
   }
 
   /** Effects that live in world space, not on the bobbing disc. */

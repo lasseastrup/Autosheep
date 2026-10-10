@@ -3,7 +3,7 @@ import type { Obstacle } from '../sim/contract';
 import { C } from '../engine/palette';
 import { toon, glow, noOutline } from '../engine/toon';
 import { mesh } from '../art/geo';
-import { bakeStatic } from '../engine/bake';
+import { bakeStatic, chunkInstances, tileMesh } from '../engine/bake';
 import { Rng } from '../engine/rng';
 import { terrain, groundMaterial, meadowDressing, rollingHills, tree, bush, rock, farmhouse, barn, pickupTruck } from '../art/props';
 
@@ -275,5 +275,8 @@ export function buildScenery(l: LevelObstacles): { group: THREE.Group; blinkers:
   ground.castShadow = false;
   // hundreds of small props become one mesh per material; the blinking lights stay separate
   bakeStatic(g, new Set(blinkers));
+  // and the big things are cut up so what is off screen is not drawn
+  tileMesh(ground);
+  chunkInstances(g);
   return { group: g, blinkers };
 }

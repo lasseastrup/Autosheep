@@ -33,6 +33,10 @@ export class Tentacle {
       y += Math.sin(a) * this.step;
     });
   }
+  /** the parts update() moves */
+  get moving(): THREE.Object3D[] {
+    return this.segs;
+  }
   tip(target: THREE.Vector3): THREE.Vector3 {
     return this.segs[this.segs.length - 1].getWorldPosition(target);
   }
@@ -171,6 +175,15 @@ export class Gafoop {
 
     this.root.add(this.body);
     this.update(0);
+  }
+
+  /** Every node update() moves or hides (for bakeRigid). */
+  get moving(): THREE.Object3D[] {
+    return [
+      this.body, this.mouthInner, this.tongue, this.teeth, this.cap, this.cape, this.sweat,
+      ...this.eyes.flatMap((e) => [e.stalk, e.ball, e.pupil]),
+      ...this.armL.moving, ...this.armR.moving,
+    ];
   }
 
   /** Pose for absolute time `time` (seconds); stateless so any frame can be rendered alone. */

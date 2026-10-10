@@ -32,7 +32,11 @@ gateway; ease off, or bring the bucket.
 **On a phone** (landscape is best), drag to fly; on-screen buttons appear after the first touch:
 FEED (hold, while flying with the other thumb), HONK, GATE, and turn and zoom. The gate and honk
 rows of the top-right panel and the buttons on the verdict card can also be clicked with a mouse.
-`F` (or clicking the objective panel) shows the frame rate, main-thread time and draw calls.
+`F` (or clicking the objective panel) shows the frame rate, main-thread time and draw calls,
+and under it a RUN PERF TEST button (or `P`): for half a minute the game turns the expensive
+parts of a frame off one at a time (shadow pass, outline pass, bloom, palette, HUD, grass,
+full-resolution upscale, then all of them, then drawing nothing) and shows the frame rate of
+each with the device and GPU, so one screenshot from a slow device says where its time goes.
 
 **If something stalls.** Every slow piece of start-up is a named loading step. Until the menu is
 up, a loading panel lists them, so a frozen screen shows the step that froze it (the yellow

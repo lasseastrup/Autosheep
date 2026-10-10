@@ -19,6 +19,8 @@ import { NO_OUTLINE_LAYER } from './toon';
  */
 
 export const MARGIN = 4;
+// two vec3 arrays of this size stay well inside the 224 uniform vectors WebGL2 guarantees
+const MAX_PALETTE = 72;
 
 export interface PostSettings {
   outline: number; // 0..1 darkening of silhouette pixels
@@ -138,7 +140,9 @@ precision highp float;
 uniform sampler2D tColor;
 uniform sampler2D tNormal;
 uniform sampler2D tBloom;
-uniform sampler2D tPalette; // row 0: OKLab, row 1: sRGB
+// the palette in uniforms, not a texture: 65 float texture reads per pixel are slow on phones
+uniform vec3 uPalLab[MAX_PALETTE];
+uniform vec3 uPalRgb[MAX_PALETTE];
 uniform int uPaletteSize;
 uniform vec2 uRes;
 uniform float uOutline, uHighlight, uDepthAbs, uDepthRel, uNormalThreshold;
@@ -217,25 +221,24 @@ void main() {
   if (uQuantize > 0.0) {
     vec3 lab = linToOklab(pow((srgb + 0.055) / 1.055, vec3(2.4)));
     float d1 = 1e9, d2 = 1e9; int i1 = 0, i2 = 0;
-    for (int i = 0; i < 128; i++) {
+    vec3 c1 = uPalLab[0], c2 = uPalLab[0];
+    for (int i = 0; i < MAX_PALETTE; i++) {
       if (i >= uPaletteSize) break;
-      vec3 pl = texelFetch(tPalette, ivec2(i, 0), 0).rgb;
+      vec3 pl = uPalLab[i];
       vec3 dv = lab - pl;
       dv.yz *= 1.5; // keep hue/chroma: a lighter or darker neighbour beats a hue jump
       float dist = dot(dv, dv);
-      if (dist < d1) { d2 = d1; i2 = i1; d1 = dist; i1 = i; }
-      else if (dist < d2) { d2 = dist; i2 = i; }
+      if (dist < d1) { d2 = d1; i2 = i1; c2 = c1; d1 = dist; i1 = i; c1 = pl; }
+      else if (dist < d2) { d2 = dist; i2 = i; c2 = pl; }
     }
     // ordered dither between the nearest colour and the runner-up, but only along the segment
     // joining them (projection) and only when they are neighbours, so flat areas stay clean.
-    vec3 c1 = texelFetch(tPalette, ivec2(i1, 0), 0).rgb;
-    vec3 c2 = texelFetch(tPalette, ivec2(i2, 0), 0).rgb;
     vec3 seg = c2 - c1;
     float segLen2 = max(dot(seg, seg), 1e-6);
     float t = clamp(dot(lab - c1, seg) / segLen2, 0.0, 1.0);
     float near = 1.0 - smoothstep(uDitherMaxDist * 0.7, uDitherMaxDist, sqrt(segLen2));
     int pick = (t * near > mix(0.5, bayer4(p + uDitherOffset), uDither * ditherW)) ? i2 : i1;
-    vec3 q = texelFetch(tPalette, ivec2(pick, 1), 0).rgb;
+    vec3 q = uPalRgb[pick];
     srgb = mix(srgb, q, uQuantize);
   }
   gl_FragColor = vec4(srgb, 1.0);
@@ -270,8 +273,9 @@ void main() {
 
   if (float(ipTop.y) < uBars || float(ipTop.y) >= uRes.y - uBars) c = vec3(0.0);
   if (uUseOverlay > 0.5) {
-    vec4 o = texture2D(tOverlay, (vec2(ip) + 0.5) / uRes);
-    c = mix(c, o.rgb, o.a);
+    // uploaded as the 2D canvas stores it: top row first, alpha premultiplied
+    vec4 o = texelFetch(tOverlay, ipTop, 0);
+    c = c * (1.0 - o.a) + o.rgb;
   }
   if (uScanlines > 0.0 && (ipTop.y & 1) == 1) c *= 1.0 - 0.35 * uScanlines;
   if (uInvert > 0.5) c = 1.0 - c;
@@ -296,7 +300,14 @@ function makeRT(w: number, h: number, depth: boolean, type: THREE.TextureDataTyp
   });
 }
 
+const NORMAL_CLEAR = new THREE.Color(0.5, 0.5, 1.0);
+
 export class PixelRenderer {
+  /**
+   * Keep each frame in the canvas after it is shown, so tooling can read it back later. It
+   * costs a copy of the whole screen every frame (dear on phones), so it is off for play.
+   */
+  static keepFrames = false;
   readonly renderer: THREE.WebGLRenderer;
   readonly width: number;
   readonly height: number;
@@ -307,6 +318,8 @@ export class PixelRenderer {
   fx: ScreenFx = defaultFx();
   /** Snap orthographic cameras to the pixel grid and hand the remainder to the screen pass. */
   snapOrtho = true;
+  /** Leave passes out, to measure what they cost (the perf test). */
+  readonly skip = { outline: false, shadows: false };
 
   readonly overlayCanvas: HTMLCanvasElement;
   readonly overlay: CanvasRenderingContext2D;
@@ -326,7 +339,7 @@ export class PixelRenderer {
   private quad: THREE.Mesh;
   private quadScene = new THREE.Scene();
   private quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  private paletteTex: THREE.DataTexture | null = null;
+  private hasPalette = false;
   private subpixel = new THREE.Vector2();
   private ditherOffset = new THREE.Vector2();
 
@@ -335,7 +348,7 @@ export class PixelRenderer {
     this.height = height;
     this.padW = width + MARGIN * 2;
     this.padH = height + MARGIN * 2;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: PixelRenderer.keepFrames, powerPreference: 'high-performance' });
     // checking each shader for errors on first use blocks until the driver has compiled it;
     // worth it while developing, a needless stall in a release build
     this.renderer.debug.checkShaderErrors = import.meta.env.DEV;
@@ -365,11 +378,13 @@ export class PixelRenderer {
     });
     this.pixelMat = new THREE.ShaderMaterial({
       vertexShader: FULLSCREEN_VERT, fragmentShader: PIXEL_FRAG,
+      defines: { MAX_PALETTE },
       uniforms: {
         tColor: { value: this.colorRT.texture },
         tNormal: { value: this.normalRT.texture },
         tBloom: { value: this.blurRT.texture },
-        tPalette: { value: null },
+        uPalLab: { value: Array.from({ length: MAX_PALETTE }, () => new THREE.Vector3()) },
+        uPalRgb: { value: Array.from({ length: MAX_PALETTE }, () => new THREE.Vector3()) },
         uPaletteSize: { value: 0 },
         uRes: { value: new THREE.Vector2(this.padW, this.padH) },
         uOutline: { value: 0 }, uHighlight: { value: 0 }, uDepthAbs: { value: 0 }, uDepthRel: { value: 0 },
@@ -383,11 +398,14 @@ export class PixelRenderer {
     this.overlayCanvas = document.createElement('canvas');
     this.overlayCanvas.width = width;
     this.overlayCanvas.height = height;
-    this.overlay = this.overlayCanvas.getContext('2d', { willReadFrequently: true })!;
+    this.overlay = this.overlayCanvas.getContext('2d')!;
     this.overlay.imageSmoothingEnabled = false;
+    // uploaded every frame, so as the canvas holds it: no flip, no un-premultiplying
     this.overlayTex = new THREE.CanvasTexture(this.overlayCanvas);
     this.overlayTex.minFilter = this.overlayTex.magFilter = THREE.NearestFilter;
     this.overlayTex.generateMipmaps = false;
+    this.overlayTex.flipY = false;
+    this.overlayTex.premultiplyAlpha = true;
     this.overlayTex.colorSpace = THREE.NoColorSpace;
 
     this.screenMat = new THREE.ShaderMaterial({
@@ -411,20 +429,17 @@ export class PixelRenderer {
   }
 
   setPalette(hexes: string[]): void {
-    const n = hexes.length;
-    const data = new Float32Array(n * 2 * 4);
+    if (hexes.length > MAX_PALETTE) throw new Error(`palettes have at most ${MAX_PALETTE} colours`);
+    const u = this.pixelMat.uniforms;
     hexes.forEach((h, i) => {
       const lab = srgbHexToOklab(h);
       const rgb = hexToRgb(h);
-      data.set([lab[0], lab[1], lab[2], 1], i * 4);
-      data.set([rgb[0], rgb[1], rgb[2], 1], (n + i) * 4);
+      // the values a float texture held, so the result is the same to the bit
+      (u.uPalLab.value as THREE.Vector3[])[i].set(Math.fround(lab[0]), Math.fround(lab[1]), Math.fround(lab[2]));
+      (u.uPalRgb.value as THREE.Vector3[])[i].set(Math.fround(rgb[0]), Math.fround(rgb[1]), Math.fround(rgb[2]));
     });
-    this.paletteTex?.dispose();
-    this.paletteTex = new THREE.DataTexture(data, n, 2, THREE.RGBAFormat, THREE.FloatType);
-    this.paletteTex.minFilter = this.paletteTex.magFilter = THREE.NearestFilter;
-    this.paletteTex.needsUpdate = true;
-    this.pixelMat.uniforms.tPalette.value = this.paletteTex;
-    this.pixelMat.uniforms.uPaletteSize.value = n;
+    u.uPaletteSize.value = hexes.length;
+    this.hasPalette = true;
   }
 
   /** Fit the canvas to a box (CSS px) at the largest integer scale (fractional below 1x). */
@@ -504,10 +519,16 @@ export class PixelRenderer {
     scene.fog = null;
     scene.overrideMaterial = this.normalMat;
     camera.layers.set(0);
-    r.setRenderTarget(this.normalRT);
-    r.setClearColor(new THREE.Color(0.5, 0.5, 1.0), 10000);
-    r.clear();
-    r.render(scene, camera);
+    // three renders the shadow maps on every render() call; this pass does not use them, and
+    // the colour pass below renders them anyway
+    const autoShadow = r.shadowMap.autoUpdate;
+    r.shadowMap.autoUpdate = false;
+    if (!this.skip.outline) {
+      r.setRenderTarget(this.normalRT);
+      r.setClearColor(NORMAL_CLEAR, 10000);
+      r.clear();
+      r.render(scene, camera);
+    }
     scene.overrideMaterial = savedOverride;
     scene.background = savedBg;
     scene.fog = savedFog;
@@ -518,7 +539,9 @@ export class PixelRenderer {
     r.setRenderTarget(this.colorRT);
     r.setClearColor(0x000000, 1);
     r.clear();
+    r.shadowMap.autoUpdate = autoShadow && !this.skip.shadows;
     r.render(scene, camera);
+    r.shadowMap.autoUpdate = autoShadow;
     camera.layers.mask = savedMask;
 
     this.clearMargin(camera);
@@ -551,7 +574,7 @@ export class PixelRenderer {
     u.uNormalThreshold.value = p.normalThreshold;
     u.uDither.value = p.dither;
     u.uDitherMaxDist.value = p.ditherMaxDist;
-    u.uQuantize.value = this.paletteTex ? p.quantize : 0;
+    u.uQuantize.value = this.hasPalette ? p.quantize : 0;
     u.uBloom.value = p.bloom;
     u.uExposure.value = p.exposure;
     (u.uDitherOffset.value as THREE.Vector2).copy(this.ditherOffset);
