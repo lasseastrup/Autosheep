@@ -298,7 +298,7 @@ function prepareGame(fonts: Fonts): Promise<Game> {
     // the screen; starting it just hands it the canvas. (It used to have a hidden canvas and a
     // WebGL context of its own, which phones can take away while it waits.)
     const game = await loader.step('game: building the level', () => {
-      const g = new Game(player ? player.pr.renderer : canvas, fonts);
+      const g = new Game(player ? player.pr.renderer : canvas, fonts, Number(params.get('level') ?? 1));
       if (player) g.pr.offscreen = true;
       else fitGame(g)();
       return g;
@@ -411,6 +411,9 @@ function wireInput(game: Game, el: HTMLCanvasElement): void {
   // finger steers while it is down, and feeds with the FEED button, so one thumb can hold the
   // bucket while the other flies.
   const roles = new Map<number, ButtonId | 'move'>();
+  // In build mode a pointer on the ground is a tap (it places something) unless it moves
+  // more than a few pixels, which makes it a drag (it pans the view).
+  const presses = new Map<number, { last: { x: number; y: number }; moved: number }>();
   window.addEventListener('pointerdown', (e) => {
     const p = toOverlay(e);
     if (!p) return;
@@ -423,18 +426,40 @@ function wireInput(game: Game, el: HTMLCanvasElement): void {
     }
     roles.set(e.pointerId, 'move');
     inp.pointer = p;
+    if (game.building) {
+      presses.set(e.pointerId, { last: p, moved: 0 });
+      return;
+    }
     if (e.pointerType === 'mouse') inp.bucket = (e.buttons & 3) !== 0;
   });
   window.addEventListener('pointermove', (e) => {
     const p = toOverlay(e);
     if (e.pointerType === 'mouse') inp.pointer = p;
     else if (p && roles.get(e.pointerId) === 'move') inp.pointer = p;
+    const press = presses.get(e.pointerId);
+    if (press && p && game.building) {
+      const dx = p.x - press.last.x;
+      const dy = p.y - press.last.y;
+      press.moved += Math.hypot(dx, dy);
+      press.last = p;
+      if (press.moved > 6) {
+        inp.drag.dx += dx;
+        inp.drag.dy += dy;
+      }
+    }
   });
   const up = (e: PointerEvent) => {
     const r = roles.get(e.pointerId);
     roles.delete(e.pointerId);
     if (r && r !== 'move') game.buttonUp(r);
-    if (e.pointerType === 'mouse') inp.bucket = r === 'move' && (e.buttons & 3) !== 0;
+    const press = presses.get(e.pointerId);
+    presses.delete(e.pointerId);
+    if (press && game.building && e.type === 'pointerup' && press.moved <= 6) {
+      // right-click finishes a race; anything else is a tap where the pointer is
+      if (e.pointerType === 'mouse' && e.button === 2) inp.hits.push('enter');
+      else inp.taps.push(press.last);
+    }
+    if (e.pointerType === 'mouse') inp.bucket = !game.building && r === 'move' && (e.buttons & 3) !== 0;
   };
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);

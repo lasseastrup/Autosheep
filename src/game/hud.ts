@@ -7,7 +7,16 @@ export const W = 640;
 export const H = 360;
 
 /** Things on screen that can be clicked or tapped. Each one does what a key does. */
-export type ButtonId = 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'perf' | 'perfTest';
+/** Build tools (herdway levels). */
+export const TOOLS = ['lane', 'flap', 'rack', 'lick', 'chimes', 'shed', 'spindle', 'hurdle', 'remove'] as const;
+export type ToolId = (typeof TOOLS)[number];
+export const TOOL_LABEL: Record<ToolId, string> = {
+  lane: 'RACE', flap: 'FLAP', rack: 'RACK', lick: 'LICK', chimes: 'CHIMES', shed: 'SHED', spindle: 'SPINDLE', hurdle: 'HURDLE', remove: 'REMOVE',
+};
+
+export type ButtonId =
+  | 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'next' | 'keep' | 'perf' | 'perfTest'
+  | 'speed' | 'build' | 'flow' | 'finish' | 'cancel' | 'rotate' | `tool:${ToolId}`;
 export interface Button {
   id: ButtonId;
   x: number;
@@ -16,26 +25,62 @@ export interface Button {
   h: number;
 }
 
+/** What the HUD's layout depends on. */
+export interface HudLayout {
+  touch: boolean;
+  /** the verdict card, once its buttons are up */
+  won: { age: number; buttons: ButtonId[] } | null;
+  perf: boolean;
+  kind: 'pen' | 'herdway';
+  /** build mode: the tool in hand, and whether a race is half drawn */
+  build: { tool: ToolId; drawing: boolean } | null;
+}
+
 /** Layout of the clickable parts of the HUD; drawing and hit-testing both use it. */
-export function hudButtons(touch: boolean, wonAge: number | null, perf = false): Button[] {
+export function hudButtons(L: HudLayout): Button[] {
   const b: Button[] = [
     // the objective panel toggles the frame-rate readout
     { id: 'perf', x: 6, y: 6, w: 150, h: 46 },
-    // the gate and honk rows of the top-right panel work for everyone
-    { id: 'gate', x: W - 96, y: 6, w: 90, h: 15 },
-    { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 },
   ];
+  // the rows of the top-right panel work for everyone
+  if (L.kind === 'pen') b.push({ id: 'gate', x: W - 96, y: 6, w: 90, h: 15 }, { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 });
+  else {
+    b.push(
+      { id: 'speed', x: W - 96, y: 6, w: 90, h: 15 },
+      { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 },
+      { id: 'build', x: W - 96, y: 44, w: 44, h: 16 },
+      { id: 'flow', x: W - 50, y: 44, w: 44, h: 16 },
+    );
+  }
   // with the readout showing, a button under it runs the perf test
-  if (perf) b.push(PERF_TEST);
-  if (wonAge !== null) {
-    if (wonAge > 1.6) b.push({ id: 'again', x: W / 2 - 156, y: 206, w: 148, h: 18 }, { id: 'bigger', x: W / 2 + 8, y: 206, w: 148, h: 18 });
+  if (L.perf) b.push(PERF_TEST);
+  if (L.won) {
+    if (L.won.age > 1.6) {
+      const n = L.won.buttons.length;
+      const w = n === 3 ? 104 : 148;
+      const x0 = Math.round(W / 2 - (n * w + (n - 1) * 8) / 2);
+      L.won.buttons.forEach((id, k) => b.push({ id, x: x0 + k * (w + 8), y: 206, w, h: 18 }));
+    }
     return b;
   }
-  if (touch) {
+  if (L.build) {
+    // the toolbar along the bottom, clear of the turn and zoom buttons on the left
+    const tw = 50;
+    const x0 = L.touch ? 162 : Math.round(W / 2 - (TOOLS.length * tw) / 2);
+    TOOLS.forEach((t, k) => b.push({ id: `tool:${t}`, x: x0 + k * tw, y: H - 34, w: tw - 2, h: 28 }));
+    const ax = W - 6;
+    if (L.build.drawing) b.push({ id: 'finish', x: ax - 64, y: H - 64, w: 64, h: 24 }, { id: 'cancel', x: ax - 132, y: H - 64, w: 64, h: 24 });
+    else if (L.build.tool === 'shed' || L.build.tool === 'spindle' || L.build.tool === 'flap' || L.build.tool === 'rack') b.push({ id: 'rotate', x: ax - 64, y: H - 64, w: 64, h: 24 });
+  }
+  if (L.touch) {
+    if (!L.build) {
+      b.push(
+        { id: 'feed', x: W - 66, y: H - 66, w: 60, h: 60 },
+        { id: 'honk', x: W - 128, y: H - 52, w: 56, h: 46 },
+      );
+      if (L.kind === 'pen') b.push({ id: 'gate', x: W - 190, y: H - 52, w: 56, h: 46 });
+    }
     b.push(
-      { id: 'feed', x: W - 66, y: H - 66, w: 60, h: 60 },
-      { id: 'honk', x: W - 128, y: H - 52, w: 56, h: 46 },
-      { id: 'gate', x: W - 190, y: H - 52, w: 56, h: 46 },
       { id: 'rotL', x: 6, y: H - 38, w: 32, h: 32 },
       { id: 'rotR', x: 42, y: H - 38, w: 32, h: 32 },
       { id: 'zoomOut', x: 84, y: H - 38, w: 32, h: 32 },
@@ -57,10 +102,16 @@ export function buttonAt(buttons: Button[], x: number, y: number): ButtonId | nu
 }
 
 export interface HudState {
-  penned: number;
-  total: number;
+  layout: HudLayout;
+  objective: { title: string; count: number; total: number; label: string; icon: 'sheep' | 'yarn' };
   time: number;
-  gateOpen: boolean;
+  /** null on levels without a gate */
+  gateOpen: boolean | null;
+  /** simulation speed (herdway levels) */
+  speed: number;
+  flowOn: boolean;
+  /** build mode's line of hints, when building */
+  buildHint: string | null;
   /** seconds since the game started, for fading the help */
   playing: number;
   showHelp: boolean;
@@ -68,10 +119,10 @@ export interface HudState {
   /** above his head at y, or (with no room above) under his feet at `under` */
   bubble: { text: string; x: number; y: number; under: number } | null;
   /** where the pen is, if it is off screen */
-  penArrow: { x: number; y: number; angle: number } | null;
+  penArrow: { x: number; y: number; angle: number; label: string } | null;
   floaters: { text: string; x: number; y: number; age: number }[];
   cursor: { x: number; y: number; tool: 'idle' | 'bucket' } | null;
-  won: { time: number; age: number } | null;
+  won: { time: number; age: number; lines: [string, string] } | null;
   megaphoneReady: number;
   /** touch controls are showing */
   touch: boolean;
@@ -88,11 +139,13 @@ const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${St
 
 export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void {
   // --- objective panel
+  const ob = s.objective;
   panel(g, 6, 6, 150, 46, { fill: C.ink, border: C.straw, accent: C.gold });
-  f.small.draw(g, 'AUDIT 0 - THE FIRST PEN', 12, 11, { color: C.straw });
-  drawSprite(g, 'sheep', 12, 24, 2);
-  f.title.draw(g, `${s.penned}/${s.total}`, 42, 20, { color: s.penned === s.total ? C.lime : C.white, shadow: C.black });
-  f.small.draw(g, 'PENNED', 104, 26, { color: C.fog });
+  f.small.draw(g, ob.title, 12, 11, { color: C.straw });
+  if (ob.icon === 'sheep') drawSprite(g, 'sheep', 12, 24, 2);
+  else skein(g, 14, 25);
+  f.title.draw(g, `${ob.count}/${ob.total}`, 42, 20, { color: ob.count >= ob.total ? C.lime : C.white, shadow: C.black });
+  f.small.draw(g, ob.label, 104, 26, { color: C.fog });
   f.small.draw(g, mmss(s.time), 104, 38, { color: C.mist });
   if (s.perf) {
     const p = s.perf;
@@ -104,18 +157,39 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
     f.small.draw(g, s.touch ? 'RUN PERF TEST' : 'RUN PERF TEST [P]', b.x + 5, b.y + 3, { color: C.gold });
   }
 
-  // --- gate and megaphone
+  // --- gate (or speed) and megaphone
   panel(g, W - 96, 6, 90, 34, { fill: C.ink, border: C.mist });
-  f.small.draw(g, 'GATE', W - 90, 11, { color: C.fog });
-  f.small.draw(g, s.gateOpen ? 'OPEN' : 'SHUT', W - 58, 11, { color: s.gateOpen ? C.lime : C.scarlet });
-  if (!s.touch) f.tiny.draw(g, '[G]', W - 26, 11, { color: C.lilac });
+  if (s.gateOpen !== null) {
+    f.small.draw(g, 'GATE', W - 90, 11, { color: C.fog });
+    f.small.draw(g, s.gateOpen ? 'OPEN' : 'SHUT', W - 58, 11, { color: s.gateOpen ? C.lime : C.scarlet });
+    if (!s.touch) f.tiny.draw(g, '[G]', W - 26, 11, { color: C.lilac });
+  } else {
+    f.small.draw(g, 'SPEED', W - 90, 11, { color: C.fog });
+    f.small.draw(g, `X${s.speed}`, W - 52, 11, { color: s.speed > 1 ? C.gold : C.mist });
+    if (!s.touch) f.tiny.draw(g, '[T]', W - 26, 11, { color: C.lilac });
+  }
   f.small.draw(g, 'HONK', W - 90, 25, { color: C.fog });
   rect(g, W - 58, 26, 46, 5, C.coal);
   rect(g, W - 58, 26, Math.round(46 * s.megaphoneReady), 5, s.megaphoneReady >= 1 ? C.gold : C.rust);
+  if (s.layout.kind === 'herdway' && !s.won) {
+    for (const b of hudButtons(s.layout)) {
+      if (b.id !== 'build' && b.id !== 'flow') continue;
+      const on = b.id === 'build' ? s.layout.build !== null : s.flowOn;
+      const down = s.held.has(b.id);
+      button(g, b, down || on, on ? C.gold : C.mist);
+      const label = b.id === 'build' ? (s.touch ? 'BUILD' : 'B BUILD') : s.touch ? 'FLOW' : 'O FLOW';
+      f.small.draw(g, label, b.x + b.w / 2, b.y + 4 + (down ? 1 : 0), { color: on ? C.gold : C.mist, align: 'center' });
+    }
+  }
 
   // --- help strip
-  const helpAlpha = s.won ? 0 : s.showHelp ? 1 : Math.max(0, 1 - (s.playing - 45) / 2);
-  if (s.touch) {
+  const helpAlpha = s.won ? 0 : s.showHelp || s.buildHint ? 1 : Math.max(0, 1 - (s.playing - 45) / 2);
+  if (s.buildHint) {
+    // build mode says what each tool does, just above the toolbar
+    const w = f.small.measure(s.buildHint) + 12;
+    rect(g, Math.round(W / 2 - w / 2), H - 52, w, 13, C.black);
+    f.small.draw(g, s.buildHint, W / 2, H - 49, { color: C.straw, align: 'center' });
+  } else if (s.touch) {
     if (helpAlpha > 0) {
       g.globalAlpha = helpAlpha;
       const text = s.portrait ? 'TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD' : 'DRAG TO FLY  -  HOLD FEED TO LURE  -  HONK SCATTERS';
@@ -125,10 +199,9 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
       g.globalAlpha = 1;
     }
   } else if (helpAlpha > 0) {
-    const items: [string, string][] = [
-      ['MOUSE', 'fly'], ['HOLD CLICK', 'feed bucket'], ['SPACE', 'honk'],
-      ['G', 'gate'], ['Q E', 'rotate'], ['WHEEL', 'zoom'], ['H', 'help'],
-    ];
+    const items: [string, string][] = s.layout.kind === 'pen'
+      ? [['MOUSE', 'fly'], ['HOLD CLICK', 'feed bucket'], ['SPACE', 'honk'], ['G', 'gate'], ['Q E', 'rotate'], ['WHEEL', 'zoom'], ['H', 'help']]
+      : [['MOUSE', 'fly'], ['HOLD CLICK', 'feed'], ['SPACE', 'honk'], ['B', 'build'], ['O', 'flow'], ['T', 'speed'], ['Q E', 'rotate'], ['H', 'help']];
     let w = 0;
     for (const [k, v] of items) w += f.small.measure(k) + f.tiny.measure(v) + 14;
     let x = Math.round(W / 2 - w / 2);
@@ -159,7 +232,7 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
       for (let k = -half; k <= half; k++) g.fillRect(px - Math.round(Math.sin(a) * k), py + Math.round(Math.cos(a) * k), 1, 1);
     }
     g.restore();
-    f.small.draw(g, 'PEN', Math.round(x - Math.cos(s.penArrow.angle) * 14), Math.round(y - Math.sin(s.penArrow.angle) * 12) - 3, { color: C.gold, align: 'center', outline: C.black });
+    f.small.draw(g, s.penArrow.label, Math.round(x - Math.cos(s.penArrow.angle) * 14), Math.round(y - Math.sin(s.penArrow.angle) * 12) - 3, { color: C.gold, align: 'center', outline: C.black });
   }
 
   // --- +1 floaters
@@ -172,11 +245,14 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   // --- speech bubble
   if (s.bubble && !s.won) bubble(g, f, s.bubble.text, s.bubble.x, s.bubble.y, s.bubble.under);
 
+  // --- build toolbar
+  if (s.layout.build && !s.won) toolbar(g, f, s);
+
   // --- touch controls
   if (s.touch && !s.won) touchControls(g, f, s);
 
   // --- verdict
-  if (s.won) won(g, f, s.won.time, s.won.age, s.total, s.held);
+  if (s.won) won(g, f, s.won, s.layout, s.held);
 
   // --- cursor
   if (s.cursor && !s.touch) cursor(g, s.cursor.x, s.cursor.y, s.cursor.tool);
@@ -186,9 +262,12 @@ function button(g: CanvasRenderingContext2D, b: Button, down: boolean, border: s
   panel(g, b.x, b.y + (down ? 1 : 0), b.w, b.h, { fill: down ? C.coal : C.ink, border, shadow: down ? null : C.black });
 }
 
+const TOUCH_IDS: ReadonlySet<ButtonId> = new Set<ButtonId>(['feed', 'honk', 'gate', 'rotL', 'rotR', 'zoomIn', 'zoomOut']);
+
 function touchControls(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void {
-  for (const b of hudButtons(true, null)) {
-    if (b.y < 50) continue; // the top panel draws its own rows
+  for (const b of hudButtons(s.layout)) {
+    // the top panel draws its own rows
+    if (b.y < 50 || !TOUCH_IDS.has(b.id)) continue;
     const down = s.held.has(b.id);
     const dy = down ? 1 : 0;
     const cx = b.x + b.w / 2;
@@ -237,7 +316,46 @@ function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, 
   lines.forEach((l, i) => f.body.draw(g, l, bx + 6, by + 3 + i * 14, { color: C.ink }));
 }
 
-function won(g: CanvasRenderingContext2D, f: Fonts, time: number, age: number, total: number, held: ReadonlySet<ButtonId>): void {
+/** A little skein of yarn, for the objective panel. */
+function skein(g: CanvasRenderingContext2D, x: number, y: number): void {
+  rect(g, x, y + 2, 14, 10, C.black);
+  rect(g, x + 1, y + 3, 12, 8, C.violet);
+  for (let k = 0; k < 4; k++) rect(g, x + 2 + k * 3, y + 3, 1, 8, C.lavender);
+  rect(g, x - 1, y + 6, 16, 2, C.straw);
+}
+
+const WON_LABEL: Partial<Record<ButtonId, [string, string]>> = {
+  again: ['R  AGAIN', 'AGAIN'],
+  bigger: ['N  BIGGER FLOCK', 'BIGGER FLOCK'],
+  next: ['L  NEXT LEVEL', 'NEXT LEVEL'],
+  keep: ['K  KEEP BUILDING', 'KEEP BUILDING'],
+};
+
+/** The build toolbar, and the buttons a half-drawn race or a turnable device needs. */
+function toolbar(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void {
+  const build = s.layout.build!;
+  for (const b of hudButtons(s.layout)) {
+    const down = s.held.has(b.id);
+    const dy = down ? 1 : 0;
+    const cx = b.x + b.w / 2;
+    if (b.id.startsWith('tool:')) {
+      const t = b.id.slice(5) as ToolId;
+      const on = build.tool === t;
+      button(g, b, down || on, on ? C.gold : C.lilac);
+      const n = TOOLS.indexOf(t) + 1;
+      if (!s.touch && n <= 9) f.tiny.draw(g, String(n), b.x + 4, b.y + 3 + dy, { color: C.fog });
+      f.small.draw(g, TOOL_LABEL[t], cx, b.y + 15 + dy, { color: on ? C.gold : t === 'remove' ? C.rose : C.mist, align: 'center' });
+    } else if (b.id === 'finish' || b.id === 'cancel' || b.id === 'rotate') {
+      const c = b.id === 'finish' ? C.lime : b.id === 'cancel' ? C.rose : C.straw;
+      button(g, b, down, c);
+      const label = b.id === 'finish' ? (s.touch ? 'FINISH' : 'ENTER FINISH') : b.id === 'cancel' ? (s.touch ? 'CANCEL' : 'ESC') : s.touch ? 'TURN' : 'R TURN';
+      f.small.draw(g, label, cx, b.y + 8 + dy, { color: c, align: 'center' });
+    }
+  }
+}
+
+function won(g: CanvasRenderingContext2D, f: Fonts, w: NonNullable<HudState['won']>, layout: HudLayout, held: ReadonlySet<ButtonId>): void {
+  const { time, age } = w;
   if (age < 0.15) return;
   const cx = W / 2;
   const cy = 132;
@@ -247,18 +365,17 @@ function won(g: CanvasRenderingContext2D, f: Fonts, time: number, age: number, t
   panel(g, cx - 170, py, 340, 104, { fill: C.ink, border: C.straw, accent: C.gold });
   f.small.draw(g, 'GALACTIC BUREAU OF CONQUEST - FORM 8-A', cx, py + 8, { color: C.fog, align: 'center' });
   if (age > 0.8) {
-    const mm = `${String(Math.floor(time / 60)).padStart(2, '0')}:${String(Math.floor(time % 60)).padStart(2, '0')}`;
-    f.body.draw(g, `${total} sheep penned in ${mm}.`, cx, py + 52, { color: C.white, align: 'center' });
-    f.small.draw(g, 'A MEASURABLE INCREASE IN ORGANISATION IS NOTED.', cx, py + 70, { color: C.straw, align: 'center' });
+    f.body.draw(g, w.lines[0].replace('{time}', mmss(time)), cx, py + 52, { color: C.white, align: 'center' });
+    f.small.draw(g, w.lines[1], cx, py + 70, { color: C.straw, align: 'center' });
   }
   if (age > 1.6) {
-    // clickable, and R / N on a keyboard
-    for (const b of hudButtons(false, age)) {
-      if (b.id !== 'again' && b.id !== 'bigger') continue;
+    // clickable, and the keys on a keyboard
+    for (const b of hudButtons(layout)) {
+      const label = WON_LABEL[b.id];
+      if (!label) continue;
       const down = held.has(b.id);
       button(g, b, down, C.lime);
-      const label = b.id === 'again' ? 'R  HERD AGAIN' : 'N  A BIGGER FLOCK';
-      f.small.draw(g, label, b.x + b.w / 2, b.y + 5 + (down ? 1 : 0), { color: C.lime, align: 'center' });
+      f.small.draw(g, label[layout.touch || b.w < 140 ? 1 : 0], b.x + b.w / 2, b.y + 5 + (down ? 1 : 0), { color: C.lime, align: 'center' });
     }
   }
   if (age < 0.4) return;

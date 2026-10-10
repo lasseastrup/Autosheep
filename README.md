@@ -6,8 +6,10 @@ sheep be more advanced than the humans were. General Gafoop has been exiled to E
 Instead of conveyor belts, you build fences, gates, races and machines that herd sheep
 through a civilisation, from the Stone Age to the Industrial Age.
 
-**Status:** M1. A 3-minute intro cutscene (the backstory), then the first playable level: herd 30 sheep across a
-meadow and into a pen. The flock runs behind a model-independent contract with behaviour tests.
+**Status:** M2 under way. A 3-minute intro cutscene (the backstory), then two levels: herd 30
+sheep into a pen, then build the first herdway, a loop of races through a shearing shed and a
+spindle hut that makes yarn on its own. The flock runs behind a model-independent contract with
+behaviour tests.
 The game design is in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Running
@@ -28,6 +30,14 @@ come in slowly to walk them, fast to make them run. Hold a mouse button to rattl
 bolts), `G` opens and shuts the pen gate, `Q`/`E` rotate the view, the wheel zooms and `WASD`
 pans. Pen all 30 sheep and shut the gate to pass the audit. Sheep moved too hard jam in the
 gateway; ease off, or bring the bucket.
+
+**Building** (level 2, "Form 12-C"): `B` opens build mode, `1`–`9` pick a tool (race, flap, rack,
+salt lick, chimes, shearing shed, spindle hut, hurdle, remove), a click places it, `R` turns
+it. Races are drawn point by point and join up when they end on a station door, a pasture gap
+or another race (`Enter` or right-click also finishes one, `Esc` cancels). Sheep walk a race the
+way it was drawn; a flap lets them through one way only. `O` shows the flow overlay (which way
+sheep have been moving, and what each station is doing), `T` runs time at ×2 or ×4. On a
+phone, BUILD and FLOW are under the top-right panel; tap to place, drag to pan.
 
 **On a phone** (landscape is best), drag to fly; on-screen buttons appear after the first touch:
 FEED (hold, while flying with the other thumb), HONK, GATE, and turn and zoom. The gate and honk
@@ -51,6 +61,7 @@ same corner (tap it for the log). The same lines go to the browser console, pref
 | Command | What it does |
 |---|---|
 | `npm run build` | Typecheck and build to `dist/` |
+| `?game&level=2` | Open straight onto level 2 (dev) |
 | `npm run artifact` | One self-contained HTML file (code, fonts and voice inlined) in `out/artifact/` |
 | `npm run frames -- <dir> 12.5 40 …` | Render specific intro frames to PNG (`shots` = one per shot) |
 | `npm run movie -- --workers 2` | Render the whole intro to `out/movie/autosheep-intro.mp4` (headless Chromium + ffmpeg, resumable) |

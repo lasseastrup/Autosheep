@@ -94,6 +94,18 @@ export class Works {
     this.pack = pack;
   }
 
+  /** Take everything down and start the economy afresh. */
+  clear(): void {
+    this.devices.length = 0;
+    this.stations.length = 0;
+    this.yarn = this.fleece = this.shorn = 0;
+    this.wool = new Float32Array(0);
+    this.pack = new Uint8Array(0);
+    this.events.length = 0;
+    this.time = 0;
+    this.rebuild();
+  }
+
   add(d: DeviceSpec): Device {
     const dev = { ...d, id: d.id ?? this.nextId++ } as Device;
     this.nextId = Math.max(this.nextId, dev.id + 1);

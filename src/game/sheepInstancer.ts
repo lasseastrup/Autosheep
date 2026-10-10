@@ -18,7 +18,12 @@ export interface SheepPose {
   blink: number;
   lookYaw: number;
   bounce: number;
+  /** 1 = a full fleece, 0 = just shorn */
+  wool: number;
 }
+
+/** How a just-shorn sheep looks: smaller, and a little pink. */
+const SHORN = new THREE.Color('#f4b4a8');
 
 interface Batch {
   mesh: THREE.InstancedMesh;
@@ -55,6 +60,11 @@ export class SheepInstancer {
   /** per sheep, the instance slot of each of its template's parts */
   private readonly slots: Int32Array[] = [];
   private readonly batches: Batch[] = [];
+  /** per sheep: its own wool colour, the wool parts' instance slots, and the wool last drawn */
+  private readonly woolColour: THREE.Color[] = [];
+  private readonly woolSlots: { batch: Batch; slot: number }[][] = [];
+  private readonly woolShown: Float32Array;
+  private readonly tmp = new THREE.Color();
 
   constructor(wool: readonly THREE.Color[], face: readonly THREE.Color[], variants = 4, seed = 1) {
     const count = wool.length;
@@ -107,17 +117,23 @@ export class SheepInstancer {
     });
 
     // hand out instance slots and colours
+    this.woolShown = new Float32Array(count).fill(1);
     for (let i = 0; i < count; i++) {
       const v = i % variants;
       const slots = new Int32Array(this.parts[v].length);
+      const ws: { batch: Batch; slot: number }[] = [];
       this.parts[v].forEach((p, k) => {
         const slot = p.batch.next++;
         slots[k] = slot;
         const mat = p.node.material as THREE.Material;
-        if (mat === woolMat) p.batch.mesh.setColorAt(slot, wool[i]);
-        else if (mat === faceMat) p.batch.mesh.setColorAt(slot, face[i]);
+        if (mat === woolMat) {
+          p.batch.mesh.setColorAt(slot, wool[i]);
+          ws.push({ batch: p.batch, slot });
+        } else if (mat === faceMat) p.batch.mesh.setColorAt(slot, face[i]);
       });
       this.slots.push(slots);
+      this.woolSlots.push(ws);
+      this.woolColour.push(wool[i].clone());
     }
     for (const b of this.batches) if (b.mesh.instanceColor) b.mesh.instanceColor.needsUpdate = true;
   }
@@ -134,6 +150,17 @@ export class SheepInstancer {
     s.lookYaw = p.lookYaw;
     s.bounce = p.bounce;
     s.update();
+    // a shorn fleece is thinner and lower; it grows back out
+    const w = p.wool;
+    s.wool.scale.set(0.72 + 0.28 * w, 0.84 + 0.16 * w, 0.76 + 0.24 * w);
+    if (Math.abs(w - this.woolShown[i]) > 0.02) {
+      this.woolShown[i] = w;
+      this.tmp.copy(this.woolColour[i]).lerp(SHORN, (1 - w) * 0.45);
+      for (const { batch, slot } of this.woolSlots[i]) {
+        batch.mesh.setColorAt(slot, this.tmp);
+        batch.mesh.instanceColor!.needsUpdate = true;
+      }
+    }
     s.root.position.set(p.x, 0, p.z);
     s.root.rotation.set(0, p.rotY, 0);
     s.root.scale.setScalar(p.scale);

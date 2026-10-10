@@ -27,6 +27,11 @@ export class IsoCamera {
     return Math.PI / 4 + this.quarter * (Math.PI / 2);
   }
 
+  /** screen (overlay) pixels per metre at the current zoom */
+  get pixelsPerMetre(): number {
+    return ZOOMS[this.zoomIndex];
+  }
+
   rotate(dir: 1 | -1): void {
     this.quarter += dir;
   }

@@ -708,8 +708,8 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 | Milestone | Goal | Exit criteria |
 |---|---|---|
 | **M0 — Foundations** ✅ | Pixel pipeline, audio engine, voice pipeline, intro cutscene | Intro plays in browser; movie export works |
-| **M1 — A flock in a field** 🟡 | Flock contract + current model behind it; chunked terrain; Gafoop avatar; herding by proximity; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
-| **M2 — The first herdway** | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes |
+| **M1 — A flock in a field** ✅ | Flock contract + current model behind it; chunked terrain; Gafoop avatar; herding by proximity; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
+| **M2 — The first herdway** 🟡 | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes |
 | **M3 — Stone Age vertical slice** | Quarry, treadmill power, thinking stones, research, Audit I + Ewehenge, save/load | 2 hours of play from the intro to Audit I |
 | **M4 — Bronze and Iron** | Automaton herders, clockwork collies, gongs, dye sorting, bell-wethers, smelting, lanterns, tunnels, water and wind | Audits II and III playable |
 | **M5 — Industrial** | Steam, travelators, rail, robodogs, signal logic; performance work for 5k sheep | Audit IV playable at target performance |
@@ -721,8 +721,8 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
    (threat/lure response, penning, determinism). Wrap the current `sheepherding` sim behind it
    as `sheepherding-v1`, extended with multiple stimuli and obstacles (analysis doc §3.3). Add
    the minimal boids model as a second implementation.
-2. 🟡 Terrain with the ground shader from the intro (`groundMaterial`): done as one mesh;
-   chunking waits for maps big enough to need it.
+2. ✅ Terrain with the ground shader from the intro (`groundMaterial`), cut into 64 m tiles so
+   what is off screen is culled.
 3. ✅ An instanced sheep renderer: template sheep (the intro's model, at a lower detail) are
    posed per sheep and their parts copied into one instanced mesh per part, about 17 draw calls
    for any flock size. Static scenery is merged per material and per 32 m chunk.
@@ -732,8 +732,42 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
    collision); a pen with a gate; the "herd into pen" goal and an audit verdict.
 6. ✅ The game camera at 640×360 with integer upscaling, four rotations and stepped zoom.
 
-Still to check for M1's exit criterion: frame rate on real GPUs (only headless software
-rendering has been measured), and whether the gate jam is fun or just slow.
+M1 closed after phone playtests: 15–20 fps on an iPhone became 50 after halving the draw calls,
+and the on-device perf test then put the rest on the palette pass, now a lookup table.
+
+### 14.4 M2 build: the first herdway
+
+What the herdway is made of, all driving sheep only through the flock contract (so a jam is
+the flock jamming, never a scripted queue):
+
+1. ✅ **Races** (wattle lanes, 2.4 m wide): fenced both sides, and a race draws the sheep in it
+   along the way it was drawn. That is the contract's `flow` stimulus: a lure that keeps a few
+   metres ahead of the sheep along the path, competing with real lures (rule 3: a moving line
+   keeps moving). Floors are bare, chevrons show the direction.
+2. ✅ **Flaps**: one-way hurdles across a race (the contract's `oneWay` obstacles), so a loop has
+   a direction and a line cannot back up through them.
+3. ✅ **Shearing shed and spindle hut**: solid-walled chutes with a door at each end, holding a
+   batch of four (rule 8). *Fill*: exit shut, the chute baited, the line walks in. *Work*: both
+   shut. *Release*: intake shut, a wicker sweep walks up the chute behind the batch while a pull
+   from just outside draws them out. A push that stands still soon becomes scenery
+   (habituation), and shoving harder makes them jam (rule 2), so the sweep is gentle and moves.
+4. ✅ **Packs**: the shed hands each sheep its own fleece to carry; the spindle spins it into
+   yarn; a **rack** over a race takes the yarn. Wool grows back in the field (100 s).
+5. ✅ **Salt licks** call a flock from 20 m (a lick in the race mouth gets them out of the
+   pasture), **chimes** jangle every 6 s (a startle that never habituates). Lures, like threats,
+   are hard to sense through solid walls, so a shut shed is not tugged at from outside.
+6. ✅ **Build mode**: a toolbar (race, flap, rack, lick, chimes, shed, spindle, hurdle, remove),
+   snapping to a metre grid, to open race ends, station doors and pasture gaps, and onto races
+   for flaps and racks. Mouse and touch (tap places, drag pans).
+7. ✅ **Flow overlay**: arrows for how sheep have moved through each 2 m of ground over the last
+   few seconds, and each station's phase, batch and rate.
+8. ✅ **Level 2, "Form 12-C"**: a pasture with two gaps, a shed and a spindle hut already
+   delivered, 30 yarn to make; fast-forward ×2 and ×4.
+9. ✅ The exit criterion is a test (`tests/works.test.ts`): the reference loop makes yarn for
+   ten simulated minutes with nobody herding and no sheep getting out.
+
+Still open for M2: hand gates the player can place, and playtesting whether building the loop
+by hand is fun and readable.
 
 ---
 
@@ -766,7 +800,7 @@ Decided (October 2026):
 | Sheep welfare | Nothing bad ever happens to a sheep: tired sheep rest, stressed sheep recover (default taken) |
 | Pacing | About 90 minutes to Audit I (default taken, to verify in playtests) |
 
-Still open: nothing blocking M1.
+Still open: nothing blocking M2.
 
 ---
 

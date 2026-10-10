@@ -13,6 +13,8 @@ export class Sheep {
   readonly body = new THREE.Group();
   readonly head = new THREE.Group();
   readonly jaw: THREE.Mesh;
+  /** the fleece: scaled down when shorn */
+  readonly wool: THREE.Mesh;
   readonly legs: THREE.Mesh[] = [];
   private eyes: THREE.Mesh[] = [];
   private ears: THREE.Mesh[] = [];
@@ -45,6 +47,7 @@ export class Sheep {
     puffs.push({ g: blob(0.24, detail, 0.05, seed + 9), p: [0, 0.6, 0.28] });
     puffs.push({ g: blob(0.12, 1, 0.05, seed + 10), p: [0, 0.68, -0.52] }); // tail
     const woolMesh = mesh(merged(puffs), woolMat);
+    this.wool = woolMesh;
     this.body.add(woolMesh);
 
     // head: elongated dark muzzle

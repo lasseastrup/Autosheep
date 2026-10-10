@@ -30,7 +30,7 @@ export function firstHerdway(w: Works, ox = 0, oy = 0): Pt {
   w.add({ kind: 'lane', points: [P(44, 22), P(50, 22)] });
   w.add({ kind: 'spindle', at: P(54, 22), dir: 0 });
   w.add({ kind: 'lane', points: [P(58, 22), P(64, 22), P(64, 40), P(30, 40)] });
-  w.add({ kind: 'rack', at: P(64, 31), dir: 1 });
+  w.add({ kind: 'rack', at: P(64, 31), angle: Math.PI / 2 });
   w.add({ kind: 'flap', at: P(31.5, 40), angle: Math.PI });
   // a salt lick in the race draws the flock into it, where the shed's bait can call them on
   w.add({ kind: 'lick', at: P(32.5, 22) });

@@ -8,17 +8,11 @@ import { Rng } from '../engine/rng';
 import { terrain, groundMaterial, meadowDressing, rollingHills, tree, bush, rock, farmhouse, barn, pickupTruck } from '../art/props';
 
 /**
- * M1 level, "The First Pen": a walled meadow, a flock at the west end and a pen with a gate
- * at the east end. Sim coordinates (x, y) map to world (x, 0, y).
+ * The meadow every level so far is played in: a walled field with trees, rocks, a ruined wall
+ * and a farm beyond. What each level adds (a pen, a pasture) is in levels.ts. Sim coordinates
+ * (x, y) map to world (x, 0, y).
  */
 export const WORLD = { width: 120, height: 90 };
-
-export const PEN = { x0: 90, y0: 39.5, x1: 101, y1: 51.5 };
-const GATE_Y0 = 44;
-const GATE_Y1 = 47;
-export const GATE: Obstacle = { ax: PEN.x0, ay: GATE_Y0, bx: PEN.x0, by: GATE_Y1, radius: 0.1, solid: false };
-export const FLOCK_AT = { x: 32, y: 47 };
-export const GAFOOP_AT = { x: 22, y: 47 };
 
 const HURDLE = 0.1;
 const seg = (ax: number, ay: number, bx: number, by: number, radius = HURDLE, solid = false): Obstacle => ({ ax, ay, bx, by, radius, solid });
@@ -26,24 +20,12 @@ const seg = (ax: number, ay: number, bx: number, by: number, radius = HURDLE, so
 const post = (x: number, y: number, r: number): Obstacle => ({ ax: x, ay: y, bx: x, by: y, radius: r, solid: false });
 
 export interface LevelObstacles {
-  fences: Obstacle[];
   walls: Obstacle[];
   trees: { x: number; y: number; s: number; kind: 'round' | 'pine' }[];
   rocks: { x: number; y: number; s: number }[];
 }
 
 export function levelObstacles(): LevelObstacles {
-  const { x0, y0, x1, y1 } = PEN;
-  const fences = [
-    seg(x0, y0, x1, y0),
-    seg(x1, y0, x1, y1),
-    seg(x1, y1, x0, y1),
-    seg(x0, y1, x0, GATE_Y1),
-    seg(x0, GATE_Y0, x0, y0),
-    // wings funnel the flock to the gate
-    seg(x0, GATE_Y0, x0 - 6, GATE_Y0 - 7),
-    seg(x0, GATE_Y1, x0 - 6, GATE_Y1 + 7),
-  ];
   // a ruined drystone wall in the north meadow (solid: sheep cannot see through it)
   const walls = [seg(48, 16, 63, 19, 0.3, true), seg(63, 19, 66, 25, 0.3, true)];
   const trees = [
@@ -60,17 +42,20 @@ export function levelObstacles(): LevelObstacles {
     { x: 84, y: 74, s: 1.6 },
     { x: 24, y: 70, s: 1.1 },
   ];
-  return { fences, walls, trees, rocks };
+  return { walls, trees, rocks };
 }
 
-export function allObstacles(l: LevelObstacles, gateClosed: boolean): Obstacle[] {
-  const out = [...l.fences, ...l.walls];
+/** The meadow's own obstacles: walls, tree trunks, rocks, the pickup. */
+export function allObstacles(l: LevelObstacles): Obstacle[] {
+  const out = [...l.walls];
   for (const t of l.trees) out.push(post(t.x, t.y, 0.35 * t.s));
   for (const r of l.rocks) out.push(post(r.x, r.y, 0.45 * r.s));
   out.push(post(17, 12, 1.4)); // the abandoned pickup
-  if (gateClosed) out.push(GATE);
   return out;
 }
+
+/** A hurdle fence segment, as levels lay them out. */
+export const hurdle = (ax: number, ay: number, bx: number, by: number): Obstacle => seg(ax, ay, bx, by);
 
 const hills = rollingHills(13, 1.6);
 
@@ -195,7 +180,6 @@ export function buildScenery(l: LevelObstacles): { group: THREE.Group; blinkers:
   const H = WORLD.height;
   g.add(wallMeshes([seg(0, 0, W, 0), seg(W, 0, W, H), seg(W, H, 0, H), seg(0, H, 0, 0)], 5, 3));
   g.add(wallMeshes(l.walls, 9, 3));
-  g.add(fenceMeshes(l.fences));
 
   for (const [i, t] of l.trees.entries()) {
     const tr = tree(40 + i, t.s, t.kind);

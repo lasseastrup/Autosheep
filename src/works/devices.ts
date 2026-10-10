@@ -55,12 +55,12 @@ export interface Station {
   dir: Dir;
 }
 
-/** A rack over a race: sheep walking under it hang up their yarn. */
+/** A rack over a race: sheep walking under it hang up their yarn. `angle` is along the race. */
 export interface Rack {
   kind: 'rack';
   id: number;
   at: Pt;
-  dir: Dir;
+  angle: number;
 }
 
 /** Wind chimes: every few seconds a jangle that sheep move away from. Never grows familiar. */
@@ -139,9 +139,13 @@ export function inStation(s: { at: Pt; dir: Dir }, p: Pt, len = STATION_LEN, ins
   return Math.abs(along) < len / 2 - inset && Math.abs(across) < LANE_W / 2 + inset;
 }
 
-/** Is p under rack r? */
+/** Is p under rack r (the race's width, a metre either side of the crossbar)? */
 export function underRack(r: Rack, p: Pt): boolean {
-  return inStation(r, p, 2, 0);
+  const ux = Math.cos(r.angle);
+  const uy = Math.sin(r.angle);
+  const dx = p.x - r.at.x;
+  const dy = p.y - r.at.y;
+  return Math.abs(dx * ux + dy * uy) < 1 && Math.abs(-dx * uy + dy * ux) < LANE_W / 2 + 0.2;
 }
 
 /** Fences that do not change: everything but the station doors. */
