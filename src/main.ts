@@ -9,7 +9,7 @@ import { AudioEngine } from './audio/engine';
 import { loadFonts, type Fonts } from './engine/bitmapFont';
 import { Game } from './game/game';
 import { GameAudio } from './game/gameAudio';
-import { W as GW, H as GH } from './game/hud';
+import { W as GW, H as GH, type ButtonId } from './game/hud';
 
 /**
  * Entry point. Plays the intro cutscene in real time (synced to the audio clock), then the
@@ -211,7 +211,10 @@ function startGame(fonts: Fonts, ctx: AudioContext | null): void {
   gc.style.cursor = 'none';
   stage.appendChild(gc);
   const game = new Game(gc, fonts);
-  const fit = fitTo((w, h, d, f) => game.pr.resize(w, h, d, f), 0);
+  const fit = fitTo((w, h, d, f) => {
+    game.pr.resize(w, h, d, f);
+    game.portrait = window.innerHeight > window.innerWidth;
+  }, 0);
   fit();
   window.addEventListener('resize', fit);
   hint.textContent = '';
@@ -254,21 +257,44 @@ function startGame(fonts: Fonts, ctx: AudioContext | null): void {
 
 function wireInput(game: Game, el: HTMLCanvasElement): void {
   const inp = game.input;
-  const toOverlay = (e: PointerEvent | MouseEvent) => {
+  const toOverlay = (e: PointerEvent): { x: number; y: number } | null => {
     const r = el.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * GW;
     const y = ((e.clientY - r.top) / r.height) * GH;
-    inp.pointer = x >= 0 && x <= GW && y >= 0 && y <= GH ? { x, y } : null;
+    return x >= 0 && x <= GW && y >= 0 && y <= GH ? { x, y } : null;
   };
-  window.addEventListener('pointermove', toOverlay);
-  // holding either mouse button rattles the feed bucket
+  // Every pointer (mouse, or each finger) gets a role when it goes down: an on-screen button,
+  // or steering Gafoop. A mouse steers just by hovering and feeds while a button is held; a
+  // finger steers while it is down, and feeds with the FEED button, so one thumb can hold the
+  // bucket while the other flies.
+  const roles = new Map<number, ButtonId | 'move'>();
   window.addEventListener('pointerdown', (e) => {
-    toOverlay(e);
-    inp.bucket = (e.buttons & 3) !== 0;
+    const p = toOverlay(e);
+    if (!p) return;
+    if (e.pointerType !== 'mouse' && !game.touch) game.touch = true;
+    const b = game.buttonAt(p.x, p.y);
+    if (b) {
+      roles.set(e.pointerId, b);
+      game.buttonDown(b);
+      return;
+    }
+    roles.set(e.pointerId, 'move');
+    inp.pointer = p;
+    if (e.pointerType === 'mouse') inp.bucket = (e.buttons & 3) !== 0;
   });
-  window.addEventListener('pointerup', (e) => {
-    inp.bucket = (e.buttons & 3) !== 0;
+  window.addEventListener('pointermove', (e) => {
+    const p = toOverlay(e);
+    if (e.pointerType === 'mouse') inp.pointer = p;
+    else if (p && roles.get(e.pointerId) === 'move') inp.pointer = p;
   });
+  const up = (e: PointerEvent) => {
+    const r = roles.get(e.pointerId);
+    roles.delete(e.pointerId);
+    if (r && r !== 'move') game.buttonUp(r);
+    if (e.pointerType === 'mouse') inp.bucket = r === 'move' && (e.buttons & 3) !== 0;
+  };
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', up);
   window.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
@@ -284,6 +310,9 @@ function wireInput(game: Game, el: HTMLCanvasElement): void {
   window.addEventListener('blur', () => {
     inp.keys.clear();
     inp.bucket = false;
+    inp.feed = false;
+    for (const r of roles.values()) if (r !== 'move') game.buttonUp(r);
+    roles.clear();
   });
 }
 

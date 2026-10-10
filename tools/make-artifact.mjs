@@ -13,9 +13,9 @@ const page = `<title>Autosheep</title>
 <style>
 /* single dark look: a black cinema around the pixel-art screen */
 :root { --bg: #18141a; --hint: #625565; color-scheme: dark; }
-html, body { height: 100%; margin: 0; background: var(--bg); overflow: hidden; }
+html, body { height: 100%; margin: 0; background: var(--bg); overflow: hidden; overscroll-behavior: none; touch-action: none; }
 #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 #hint { position: fixed; right: 16px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--hint); user-select: none; }
 ${styles.join('\n')}
 </style>

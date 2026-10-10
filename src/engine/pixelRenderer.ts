@@ -434,10 +434,13 @@ export class PixelRenderer {
     const w = this.width * s, h = this.height * s;
     this.renderer.setSize(w, h, false);
     const canvas = this.renderer.domElement;
-    // below 1x (phones) the 1x canvas is shrunk to fit rather than cropped
-    const shrink = fixedScale === undefined && fit < 1 ? fit : 1;
-    canvas.style.width = `${(w * shrink) / dpr}px`;
-    canvas.style.height = `${(h * shrink) / dpr}px`;
+    // Below 1x the 1x canvas is shrunk to fit rather than cropped. On dense phone screens the
+    // whole-number scale can leave much of the screen empty (a phone held upright); there the
+    // picture is stretched to fit, since uneven pixel widths are invisible at 3 device pixels
+    // per CSS pixel. Desktop screens keep exact pixels.
+    const fill = fixedScale === undefined && (fit < 1 || (dpr >= 2 && fit / s > 1.1)) ? fit / s : 1;
+    canvas.style.width = `${(w * fill) / dpr}px`;
+    canvas.style.height = `${(h * fill) / dpr}px`;
   }
 
   clearOverlay(): CanvasRenderingContext2D {

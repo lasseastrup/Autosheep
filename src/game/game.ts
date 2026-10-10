@@ -10,7 +10,7 @@ import { IsoCamera } from './camera';
 import { FlockView } from './flockView';
 import { GafoopActor } from './gafoopActor';
 import { GameAudio } from './gameAudio';
-import { drawHud, H, W, type HudState } from './hud';
+import { buttonAt, drawHud, H, hudButtons, W, type ButtonId, type HudState } from './hud';
 import { allObstacles, buildScenery, FLOCK_AT, GAFOOP_AT, GATE, GateMesh, levelObstacles, PEN, WORLD, type LevelObstacles } from './level';
 
 /**
@@ -40,6 +40,8 @@ export interface GameInput {
   pointer: { x: number; y: number } | null;
   /** a mouse button is held: rattle the feed bucket */
   bucket: boolean;
+  /** the on-screen FEED button is held (touch) */
+  feed: boolean;
   keys: Set<string>;
   /** keys pressed since the last frame */
   hits: string[];
@@ -82,7 +84,12 @@ export class Game {
   private lastScatterQuip = -99;
   private quipIndex = 0;
   audio: GameAudio | null = null;
-  readonly input: GameInput = { pointer: null, bucket: false, keys: new Set(), hits: [], wheel: 0 };
+  readonly input: GameInput = { pointer: null, bucket: false, feed: false, keys: new Set(), hits: [], wheel: 0 };
+  /** show on-screen controls (set once the player touches the screen) */
+  touch = false;
+  /** the screen is taller than wide */
+  portrait = false;
+  private readonly held = new Set<ButtonId>();
   /** called once a frame has been drawn (for tooling) */
   onFrame: (() => void) | null = null;
 
@@ -208,7 +215,7 @@ export class Game {
       target = this.cam.pick((inp.pointer.x / W) * 2 - 1, -((inp.pointer.y / H) * 2 - 1));
     }
     const g = this.gafoop;
-    g.tool = this.started && inp.bucket ? 'bucket' : 'idle';
+    g.tool = this.started && (inp.bucket || inp.feed) ? 'bucket' : 'idle';
     if (g.tool === 'bucket') {
       this.audio?.rattle();
       this.quip('bucket');
@@ -271,6 +278,34 @@ export class Game {
     const d = pen.distanceTo(p);
     const k = Math.max(0, Math.min(1, (26 - d) / 12)) * 0.45;
     return out.lerp(pen, k);
+  }
+
+  /** Which on-screen button, if any, is at this overlay position. */
+  buttonAt(x: number, y: number): ButtonId | null {
+    if (!this.started) return null;
+    return buttonAt(hudButtons(this.touch, this.won ? this.time - this.won.at : null), x, y);
+  }
+
+  /** A button pressed: it does what its key does. FEED acts while held. */
+  buttonDown(id: ButtonId): void {
+    const inp = this.input;
+    this.held.add(id);
+    switch (id) {
+      case 'feed': inp.feed = true; break;
+      case 'gate': inp.hits.push('g'); break;
+      case 'honk': inp.hits.push(' '); break;
+      case 'rotL': inp.hits.push('q'); break;
+      case 'rotR': inp.hits.push('e'); break;
+      case 'zoomIn': inp.wheel -= 1; break;
+      case 'zoomOut': inp.wheel += 1; break;
+      case 'again': inp.hits.push('r'); break;
+      case 'bigger': inp.hits.push('n'); break;
+    }
+  }
+
+  buttonUp(id: ButtonId): void {
+    this.held.delete(id);
+    if (id === 'feed') this.input.feed = false;
   }
 
   private handleKeys(inp: GameInput): void {
@@ -364,7 +399,9 @@ export class Game {
     if (pc.x < 0 || pc.x > W || pc.y < 0 || pc.y > H) {
       const dx = pc.x - W / 2;
       const dy = pc.y - H / 2;
-      const k = Math.min((W / 2 - 24) / Math.abs(dx || 1e-6), (H / 2 - 30) / Math.abs(dy || 1e-6));
+      // keep clear of the touch buttons along the bottom
+      const below = dy > 0 && this.touch ? 80 : 30;
+      const k = Math.min((W / 2 - 24) / Math.abs(dx || 1e-6), (H / 2 - below) / Math.abs(dy || 1e-6));
       penArrow = { x: W / 2 + dx * k, y: H / 2 + dy * k, angle: Math.atan2(dy, dx) };
     }
     const state: HudState = {
@@ -380,6 +417,10 @@ export class Game {
       cursor: this.input.pointer && this.started ? { ...this.input.pointer, tool: gp.tool } : null,
       won: this.won ? { time: this.won.time, age: this.time - this.won.at } : null,
       megaphoneReady: Math.min(1, (this.time - this.honkAt) / HONK.cooldown),
+      touch: this.touch,
+      feeding: gp.tool === 'bucket',
+      held: this.held,
+      portrait: this.portrait,
     };
     if (this.started) drawHud(g, this.fonts, state);
   }

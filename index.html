@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Autosheep</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #18141a; overflow: hidden; }
+      html, body { margin: 0; height: 100%; background: #18141a; overflow: hidden; overscroll-behavior: none; touch-action: none; }
       #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-      canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+      canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
       #hint { position: fixed; right: 12px; bottom: 8px; font: 12px/1.4 monospace; color: #625565; user-select: none; }
     </style>
   </head>

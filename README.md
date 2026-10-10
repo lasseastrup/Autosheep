@@ -29,6 +29,10 @@ bolts), `G` opens and shuts the pen gate, `Q`/`E` rotate the view, the wheel zoo
 pans. Pen all 30 sheep and shut the gate to pass the audit. Sheep moved too hard jam in the
 gateway; ease off, or bring the bucket.
 
+**On a phone** (landscape is best), drag to fly; on-screen buttons appear after the first touch:
+FEED (hold, while flying with the other thumb), HONK, GATE, and turn and zoom. The gate and honk
+rows of the top-right panel and the buttons on the verdict card can also be clicked with a mouse.
+
 | Command | What it does |
 |---|---|
 | `npm run build` | Typecheck and build to `dist/` |

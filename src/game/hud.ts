@@ -6,6 +6,50 @@ import { panel, rect } from '../engine/ui';
 export const W = 640;
 export const H = 360;
 
+/** Things on screen that can be clicked or tapped. Each one does what a key does. */
+export type ButtonId = 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger';
+export interface Button {
+  id: ButtonId;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Layout of the clickable parts of the HUD; drawing and hit-testing both use it. */
+export function hudButtons(touch: boolean, wonAge: number | null): Button[] {
+  const b: Button[] = [
+    // the gate and honk rows of the top-right panel work for everyone
+    { id: 'gate', x: W - 96, y: 6, w: 90, h: 15 },
+    { id: 'honk', x: W - 96, y: 21, w: 90, h: 19 },
+  ];
+  if (wonAge !== null) {
+    if (wonAge > 1.6) b.push({ id: 'again', x: W / 2 - 156, y: 206, w: 148, h: 18 }, { id: 'bigger', x: W / 2 + 8, y: 206, w: 148, h: 18 });
+    return b;
+  }
+  if (touch) {
+    b.push(
+      { id: 'feed', x: W - 66, y: H - 66, w: 60, h: 60 },
+      { id: 'honk', x: W - 128, y: H - 52, w: 56, h: 46 },
+      { id: 'gate', x: W - 190, y: H - 52, w: 56, h: 46 },
+      { id: 'rotL', x: 6, y: H - 38, w: 32, h: 32 },
+      { id: 'rotR', x: 42, y: H - 38, w: 32, h: 32 },
+      { id: 'zoomOut', x: 84, y: H - 38, w: 32, h: 32 },
+      { id: 'zoomIn', x: 120, y: H - 38, w: 32, h: 32 },
+    );
+  }
+  return b;
+}
+
+export function buttonAt(buttons: Button[], x: number, y: number): ButtonId | null {
+  // later buttons sit on top
+  for (let i = buttons.length - 1; i >= 0; i--) {
+    const b = buttons[i];
+    if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return b.id;
+  }
+  return null;
+}
+
 export interface HudState {
   penned: number;
   total: number;
@@ -22,6 +66,13 @@ export interface HudState {
   cursor: { x: number; y: number; tool: 'idle' | 'bucket' } | null;
   won: { time: number; age: number } | null;
   megaphoneReady: number;
+  /** touch controls are showing */
+  touch: boolean;
+  feeding: boolean;
+  /** buttons currently held down, to draw them pressed */
+  held: ReadonlySet<ButtonId>;
+  /** a phone held upright: suggest turning it */
+  portrait: boolean;
 }
 
 const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -39,14 +90,23 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   panel(g, W - 96, 6, 90, 34, { fill: C.ink, border: C.mist });
   f.small.draw(g, 'GATE', W - 90, 11, { color: C.fog });
   f.small.draw(g, s.gateOpen ? 'OPEN' : 'SHUT', W - 58, 11, { color: s.gateOpen ? C.lime : C.scarlet });
-  f.tiny.draw(g, '[G]', W - 26, 11, { color: C.lilac });
+  if (!s.touch) f.tiny.draw(g, '[G]', W - 26, 11, { color: C.lilac });
   f.small.draw(g, 'HONK', W - 90, 25, { color: C.fog });
   rect(g, W - 58, 26, 46, 5, C.coal);
   rect(g, W - 58, 26, Math.round(46 * s.megaphoneReady), 5, s.megaphoneReady >= 1 ? C.gold : C.rust);
 
   // --- help strip
   const helpAlpha = s.won ? 0 : s.showHelp ? 1 : Math.max(0, 1 - (s.playing - 45) / 2);
-  if (helpAlpha > 0) {
+  if (s.touch) {
+    if (helpAlpha > 0) {
+      g.globalAlpha = helpAlpha;
+      const text = s.portrait ? 'TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD' : 'DRAG TO FLY  -  HOLD FEED TO LURE  -  HONK SCATTERS';
+      const w = f.small.measure(text) + 12;
+      rect(g, Math.round(W / 2 - w / 2), 44, w, 13, C.black);
+      f.small.draw(g, text, W / 2, 47, { color: s.portrait ? C.gold : C.mist, align: 'center' });
+      g.globalAlpha = 1;
+    }
+  } else if (helpAlpha > 0) {
     const items: [string, string][] = [
       ['MOUSE', 'fly'], ['HOLD CLICK', 'feed bucket'], ['SPACE', 'honk'],
       ['G', 'gate'], ['Q E', 'rotate'], ['WHEEL', 'zoom'], ['H', 'help'],
@@ -94,11 +154,52 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   // --- speech bubble
   if (s.bubble && !s.won) bubble(g, f, s.bubble.text, s.bubble.x, s.bubble.y);
 
+  // --- touch controls
+  if (s.touch && !s.won) touchControls(g, f, s);
+
   // --- verdict
-  if (s.won) won(g, f, s.won.time, s.won.age, s.total);
+  if (s.won) won(g, f, s.won.time, s.won.age, s.total, s.held);
 
   // --- cursor
-  if (s.cursor) cursor(g, s.cursor.x, s.cursor.y, s.cursor.tool);
+  if (s.cursor && !s.touch) cursor(g, s.cursor.x, s.cursor.y, s.cursor.tool);
+}
+
+function button(g: CanvasRenderingContext2D, b: Button, down: boolean, border: string): void {
+  panel(g, b.x, b.y + (down ? 1 : 0), b.w, b.h, { fill: down ? C.coal : C.ink, border, shadow: down ? null : C.black });
+}
+
+function touchControls(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void {
+  for (const b of hudButtons(true, null)) {
+    if (b.y < 50) continue; // the top panel draws its own rows
+    const down = s.held.has(b.id);
+    const dy = down ? 1 : 0;
+    const cx = b.x + b.w / 2;
+    if (b.id === 'feed') {
+      button(g, b, down || s.feeding, s.feeding ? C.lime : C.straw);
+      f.small.draw(g, 'FEED', cx, b.y + 38 + dy, { color: s.feeding ? C.lime : C.straw, align: 'center' });
+      f.tiny.draw(g, 'HOLD', cx, b.y + 48 + dy, { color: C.fog, align: 'center' });
+      // a little bucket
+      rect(g, cx - 7, b.y + 14 + dy, 14, 14, C.black);
+      rect(g, cx - 6, b.y + 15 + dy, 12, 12, s.feeding ? C.mist : C.fog);
+      rect(g, cx - 6, b.y + 15 + dy, 12, 2, C.straw);
+      rect(g, cx - 5, b.y + 9 + dy, 10, 1, C.lilac);
+    } else if (b.id === 'honk') {
+      const ready = s.megaphoneReady >= 1;
+      button(g, b, down, ready ? C.gold : C.lilac);
+      f.small.draw(g, 'HONK', cx, b.y + 12 + dy, { color: ready ? C.gold : C.fog, align: 'center' });
+      rect(g, b.x + 8, b.y + 30 + dy, b.w - 16, 5, C.coal);
+      rect(g, b.x + 8, b.y + 30 + dy, Math.round((b.w - 16) * s.megaphoneReady), 5, ready ? C.gold : C.rust);
+    } else if (b.id === 'gate') {
+      button(g, b, down, s.gateOpen ? C.lime : C.scarlet);
+      f.small.draw(g, 'GATE', cx, b.y + 12 + dy, { color: C.mist, align: 'center' });
+      f.small.draw(g, s.gateOpen ? 'OPEN' : 'SHUT', cx, b.y + 28 + dy, { color: s.gateOpen ? C.lime : C.scarlet, align: 'center' });
+    } else {
+      button(g, b, down, C.mist);
+      const label = b.id === 'rotL' ? 'Q' : b.id === 'rotR' ? 'E' : b.id === 'zoomIn' ? '+' : '-';
+      f.small.draw(g, label, cx, b.y + 10 + dy, { color: C.straw, align: 'center' });
+      f.tiny.draw(g, b.id === 'rotL' || b.id === 'rotR' ? 'TURN' : 'ZOOM', cx, b.y + 20 + dy, { color: C.fog, align: 'center' });
+    }
+  }
 }
 
 function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, y: number): void {
@@ -114,7 +215,7 @@ function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, 
   lines.forEach((l, i) => f.body.draw(g, l, bx + 6, by + 3 + i * 14, { color: C.ink }));
 }
 
-function won(g: CanvasRenderingContext2D, f: Fonts, time: number, age: number, total: number): void {
+function won(g: CanvasRenderingContext2D, f: Fonts, time: number, age: number, total: number, held: ReadonlySet<ButtonId>): void {
   if (age < 0.15) return;
   const cx = W / 2;
   const cy = 132;
@@ -129,7 +230,14 @@ function won(g: CanvasRenderingContext2D, f: Fonts, time: number, age: number, t
     f.small.draw(g, 'A MEASURABLE INCREASE IN ORGANISATION IS NOTED.', cx, py + 70, { color: C.straw, align: 'center' });
   }
   if (age > 1.6) {
-    f.small.draw(g, 'R  HERD AGAIN      N  A BIGGER FLOCK', cx, py + 88, { color: Math.floor(age * 2) % 2 ? C.lime : C.mist, align: 'center' });
+    // clickable, and R / N on a keyboard
+    for (const b of hudButtons(false, age)) {
+      if (b.id !== 'again' && b.id !== 'bigger') continue;
+      const down = held.has(b.id);
+      button(g, b, down, C.lime);
+      const label = b.id === 'again' ? 'R  HERD AGAIN' : 'N  A BIGGER FLOCK';
+      f.small.draw(g, label, b.x + b.w / 2, b.y + 5 + (down ? 1 : 0), { color: C.lime, align: 'center' });
+    }
   }
   if (age < 0.4) return;
   const s = Math.max(1, 3 - (age - 0.4) * 12);
