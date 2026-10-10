@@ -135,14 +135,93 @@ void main() {
   gl_FragColor = vec4(s, 1.0);
 }`;
 
+/** Shared by the pixel pass and the palette table: sRGB to OKLab, and the palette metric. */
+const PALETTE_GLSL = /* glsl */ `
+vec3 linToOklab(vec3 c) {
+  float l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
+  float m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
+  float s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
+  l = pow(max(l, 0.0), 1.0 / 3.0); m = pow(max(m, 0.0), 1.0 / 3.0); s = pow(max(s, 0.0), 1.0 / 3.0);
+  return vec3(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+              1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+              0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s);
+}
+vec3 srgbToOklab(vec3 srgb) { return linToOklab(pow((srgb + 0.055) / 1.055, vec3(2.4))); }
+float palDist(vec3 lab, vec3 pl) {
+  vec3 dv = lab - pl;
+  dv.yz *= 1.5; // keep hue/chroma: a lighter or darker neighbour beats a hue jump
+  return dot(dv, dv);
+}`;
+
+/**
+ * The palette table. For each colour of a LUT_N^3 grid over sRGB it holds the 8 palette colours
+ * nearest that grid colour, as indices in ascending order, in two RGBA texels side by side; the
+ * grid's blue slices are tiled 8 across. Any colour rounds to a grid colour c at most e away
+ * (in the palette metric), so its two nearest palette colours lie within d2 + 2e of c, where
+ * d2 is c's second-nearest distance. Where more than 8 colours lie that close (a few hundred
+ * cells of a quarter million), the cell is marked (255) and its pixels search the whole
+ * palette. So the result is always that of the full search.
+ */
+const LUT_N = 64;
+const LUT_FRAG = /* glsl */ `
+precision highp float;
+uniform vec3 uPalLab[MAX_PALETTE];
+uniform int uPaletteSize;
+${PALETTE_GLSL}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  int half_ = p.x & 1;
+  int x = p.x >> 1;
+  ivec3 k = ivec3(x % ${LUT_N}, p.y % ${LUT_N}, (p.y / ${LUT_N}) * 8 + x / ${LUT_N});
+  vec3 c = vec3(k) / ${LUT_N - 1}.0;
+  vec3 lab = srgbToOklab(c);
+  // e: how far from c (in the metric) a colour rounding to it can be, from the cell's corners,
+  // edges and faces, with a margin for the curve in between
+  float e = 0.0;
+  float h = 0.5 / ${LUT_N - 1}.0;
+  for (int dz = -1; dz <= 1; dz++) for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+    vec3 q = clamp(c + vec3(dx, dy, dz) * h, 0.0, 1.0);
+    e = max(e, sqrt(palDist(lab, srgbToOklab(q))));
+  }
+  e *= 1.05;
+  // the eight nearest, by insertion; slots a small palette leaves empty hold 254 (skipped)
+  float d[8]; int id[8];
+  for (int j = 0; j < 8; j++) { d[j] = 1e9; id[j] = 254; }
+  for (int i = 0; i < MAX_PALETTE; i++) {
+    if (i >= uPaletteSize) break;
+    float di = palDist(lab, uPalLab[i]);
+    if (di < d[7]) {
+      int j = 7;
+      for (int n = 0; n < 7; n++) {
+        if (j > 0 && di < d[j - 1]) { d[j] = d[j - 1]; id[j] = id[j - 1]; j--; }
+      }
+      d[j] = di; id[j] = i;
+    }
+  }
+  // how many colours could be one of the two nearest for some colour of this cell
+  float lim = sqrt(d[1]) + 2.0 * e;
+  int need = 0;
+  for (int i = 0; i < MAX_PALETTE; i++) {
+    if (i >= uPaletteSize) break;
+    if (sqrt(palDist(lab, uPalLab[i])) <= lim) need++;
+  }
+  // ascending index order, so ties break as in a search of the whole palette
+  for (int a = 0; a < 7; a++) for (int b = 0; b < 7; b++) {
+    if (b < 7 - a && id[b] > id[b + 1]) { int t = id[b]; id[b] = id[b + 1]; id[b + 1] = t; }
+  }
+  vec4 o = half_ == 0 ? vec4(id[0], id[1], id[2], id[3]) : vec4(id[4], id[5], id[6], id[7]);
+  if (need > 8 && half_ == 0) o.x = 255.0;
+  gl_FragColor = o / 255.0;
+}`;
+
 const PIXEL_FRAG = /* glsl */ `
 precision highp float;
 uniform sampler2D tColor;
 uniform sampler2D tNormal;
 uniform sampler2D tBloom;
-// the palette in uniforms, not a texture: 65 float texture reads per pixel are slow on phones
 uniform vec3 uPalLab[MAX_PALETTE];
 uniform vec3 uPalRgb[MAX_PALETTE];
+uniform sampler2D tLut; // the palette table (see LUT_FRAG)
 uniform int uPaletteSize;
 uniform vec2 uRes;
 uniform float uOutline, uHighlight, uDepthAbs, uDepthRel, uNormalThreshold;
@@ -158,19 +237,20 @@ vec3 linToSrgb(vec3 c) {
   c = max(c, 0.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
 }
-vec3 linToOklab(vec3 c) {
-  float l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
-  float m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
-  float s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
-  l = pow(max(l, 0.0), 1.0 / 3.0); m = pow(max(m, 0.0), 1.0 / 3.0); s = pow(max(s, 0.0), 1.0 / 3.0);
-  return vec3(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
-              1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
-              0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s);
-}
+${PALETTE_GLSL}
 float bayer4(ivec2 p) {
   int x = p.x & 3; int y = p.y & 3;
   int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
   return (float(m[y * 4 + x]) + 0.5) / 16.0;
+}
+
+// the two nearest palette colours so far: distances, indices, OKLab values
+float d1, d2; int i1, i2; vec3 c1, c2;
+void consider(vec3 lab, int i) {
+  vec3 pl = uPalLab[i];
+  float dist = palDist(lab, pl);
+  if (dist < d1) { d2 = d1; i2 = i1; c2 = c1; d1 = dist; i1 = i; c1 = pl; }
+  else if (dist < d2) { d2 = dist; i2 = i; c2 = pl; }
 }
 
 void main() {
@@ -219,17 +299,23 @@ void main() {
 
   // --- palette -----------------------------------------------------------
   if (uQuantize > 0.0) {
-    vec3 lab = linToOklab(pow((srgb + 0.055) / 1.055, vec3(2.4)));
-    float d1 = 1e9, d2 = 1e9; int i1 = 0, i2 = 0;
-    vec3 c1 = uPalLab[0], c2 = uPalLab[0];
-    for (int i = 0; i < MAX_PALETTE; i++) {
-      if (i >= uPaletteSize) break;
-      vec3 pl = uPalLab[i];
-      vec3 dv = lab - pl;
-      dv.yz *= 1.5; // keep hue/chroma: a lighter or darker neighbour beats a hue jump
-      float dist = dot(dv, dv);
-      if (dist < d1) { d2 = d1; i2 = i1; c2 = c1; d1 = dist; i1 = i; c1 = pl; }
-      else if (dist < d2) { d2 = dist; i2 = i; c2 = pl; }
+    vec3 lab = srgbToOklab(srgb);
+    // The two nearest palette colours. Searching the whole palette per pixel was the most
+    // expensive part of a frame on phones; the table (LUT_FRAG) narrows it to 8 candidates
+    // that are sure to include them.
+    d1 = 1e9; d2 = 1e9; i1 = 0; i2 = 0; c1 = uPalLab[0]; c2 = uPalLab[0];
+    ivec3 k = clamp(ivec3(srgb * ${LUT_N - 1}.0 + 0.5), 0, ${LUT_N - 1});
+    ivec2 at = ivec2(((k.b % 8) * ${LUT_N} + k.r) * 2, (k.b / 8) * ${LUT_N} + k.g);
+    ivec4 ca = ivec4(texelFetch(tLut, at, 0) * 255.0 + 0.5);
+    if (ca.x == 255) {
+      for (int i = 0; i < MAX_PALETTE; i++) {
+        if (i >= uPaletteSize) break;
+        consider(lab, i);
+      }
+    } else {
+      ivec4 cb = ivec4(texelFetch(tLut, at + ivec2(1, 0), 0) * 255.0 + 0.5);
+      for (int j = 0; j < 4; j++) if (ca[j] < 254) consider(lab, ca[j]);
+      for (int j = 0; j < 4; j++) if (cb[j] < 254) consider(lab, cb[j]);
     }
     // ordered dither between the nearest colour and the runner-up, but only along the segment
     // joining them (projection) and only when they are neighbours, so flat areas stay clean.
@@ -335,6 +421,8 @@ export class PixelRenderer {
   private brightMat: THREE.ShaderMaterial;
   private blurMat: THREE.ShaderMaterial;
   private pixelMat: THREE.ShaderMaterial;
+  private lutRT: THREE.WebGLRenderTarget;
+  private lutMat: THREE.ShaderMaterial;
   private screenMat: THREE.ShaderMaterial;
   private quad: THREE.Mesh;
   private quadScene = new THREE.Scene();
@@ -366,6 +454,7 @@ export class PixelRenderer {
     this.brightRT.texture.minFilter = this.brightRT.texture.magFilter = THREE.LinearFilter;
     this.blurRT.texture.minFilter = this.blurRT.texture.magFilter = THREE.LinearFilter;
     this.pixelRT = makeRT(this.padW, this.padH, false, THREE.UnsignedByteType);
+    this.lutRT = makeRT(LUT_N * 8 * 2, LUT_N * 8, false, THREE.UnsignedByteType);
 
     this.normalMat = new THREE.ShaderMaterial({ vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, side: THREE.DoubleSide });
     this.brightMat = new THREE.ShaderMaterial({
@@ -385,6 +474,7 @@ export class PixelRenderer {
         tBloom: { value: this.blurRT.texture },
         uPalLab: { value: Array.from({ length: MAX_PALETTE }, () => new THREE.Vector3()) },
         uPalRgb: { value: Array.from({ length: MAX_PALETTE }, () => new THREE.Vector3()) },
+        tLut: { value: this.lutRT.texture },
         uPaletteSize: { value: 0 },
         uRes: { value: new THREE.Vector2(this.padW, this.padH) },
         uOutline: { value: 0 }, uHighlight: { value: 0 }, uDepthAbs: { value: 0 }, uDepthRel: { value: 0 },
@@ -393,6 +483,12 @@ export class PixelRenderer {
         uOutlineColor: { value: new THREE.Color() }, uUseOutlineColor: { value: 0 },
         uDitherOffset: { value: new THREE.Vector2() },
       },
+    });
+
+    this.lutMat = new THREE.ShaderMaterial({
+      vertexShader: FULLSCREEN_VERT, fragmentShader: LUT_FRAG,
+      defines: { MAX_PALETTE },
+      uniforms: { uPalLab: this.pixelMat.uniforms.uPalLab, uPaletteSize: { value: 0 } },
     });
 
     this.overlayCanvas = document.createElement('canvas');
@@ -438,7 +534,10 @@ export class PixelRenderer {
       (u.uPalLab.value as THREE.Vector3[])[i].set(Math.fround(lab[0]), Math.fround(lab[1]), Math.fround(lab[2]));
       (u.uPalRgb.value as THREE.Vector3[])[i].set(Math.fround(rgb[0]), Math.fround(rgb[1]), Math.fround(rgb[2]));
     });
+    // the table of nearest colours, worked out once per palette on the GPU
     u.uPaletteSize.value = hexes.length;
+    this.lutMat.uniforms.uPaletteSize.value = hexes.length;
+    this.blit(this.lutMat, this.lutRT);
     this.hasPalette = true;
   }
 
