@@ -25,6 +25,9 @@ export const SPEAKER: Record<string, { name: string; color: string } | null> = {
   auditor: { name: 'THE GRAND AUDITOR', color: C.skyLight },
 };
 
+/** Runs a named loading step (see src/loading.ts). */
+export type Step = <T>(name: string, fn: () => T | Promise<T>) => Promise<T>;
+
 export class IntroPlayer {
   readonly pr: PixelRenderer;
   readonly tl: Timeline;
@@ -42,18 +45,20 @@ export class IntroPlayer {
     this.tl = buildTimeline();
   }
 
-  async init(): Promise<void> {
-    this.fonts = await loadFonts();
+  /** Build the sets, each as its own loading step. */
+  async init(step: Step = async (_n, fn) => fn()): Promise<void> {
+    this.fonts = await step('fonts', () => loadFonts());
     const { mouth, speaking } = makeMouth(this.tl);
     this.ctx = { pr: this.pr, fonts: this.fonts, tl: this.tl, mouth, speaking };
-    const country = new CountrySet(this.ctx);
+    const ctx = this.ctx;
+    const country = await step('intro scene: countryside', () => new CountrySet(ctx));
     this.sets = {
-      space: new SpaceSet(this.ctx),
-      bridge: new BridgeSet(this.ctx),
-      scanner: new ScannerSet(this.ctx, country),
+      space: await step('intro scene: space', () => new SpaceSet(ctx)),
+      bridge: await step('intro scene: the bridge', () => new BridgeSet(ctx)),
+      scanner: await step('intro scene: the scanner', () => new ScannerSet(ctx, country)),
       country,
-      law: new LawSet(this.ctx),
-      title: new TitleSet(this.ctx),
+      law: await step('intro scene: the law', () => new LawSet(ctx)),
+      title: await step('intro scene: the title', () => new TitleSet(ctx)),
     };
   }
 
@@ -61,13 +66,13 @@ export class IntroPlayer {
    * Compile every set's shaders ahead of time (behind the start screen), one set per animation
    * frame so the screen keeps moving, instead of stalling at each new shot.
    */
-  async warmUp(): Promise<void> {
+  async warmUp(step: Step = async (_n, fn) => fn()): Promise<void> {
     const seen = new Set<THREE.Object3D>();
-    for (const set of Object.values(this.sets)) {
+    for (const [name, set] of Object.entries(this.sets)) {
       if (!set.scene || !set.camera || seen.has(set.scene)) continue;
       seen.add(set.scene);
-      await new Promise((r) => requestAnimationFrame(r));
-      await this.pr.warm(set.scene, set.camera);
+      const { scene, camera } = set;
+      await step(`intro shaders: ${name}`, () => this.pr.warm(scene, camera));
     }
   }
 

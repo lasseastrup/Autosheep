@@ -10,6 +10,7 @@ import { loadFonts, type Fonts } from './engine/bitmapFont';
 import { Game } from './game/game';
 import { GameAudio } from './game/gameAudio';
 import { W as GW, H as GH, type ButtonId } from './game/hud';
+import { loader } from './loading';
 
 /**
  * Entry point. Plays the intro cutscene in real time (synced to the audio clock), then the
@@ -37,8 +38,6 @@ function fitTo(resize: (w: number, h: number, dpr: number, fixed?: number) => vo
   };
 }
 
-const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
-
 /**
  * One AudioContext for the whole page. Created early, suspended (browsers allow that), so the
  * voices can be decoded behind the start screen; a click then only has to resume it, which
@@ -51,14 +50,19 @@ function audioContext(): AudioContext {
 }
 
 async function boot(): Promise<void> {
+  // every slow piece of start-up is a named step on a loading screen (L shows the log)
+  if (params.has('capture')) loader.disable();
+  else loader.boot();
+  const step = loader.step.bind(loader);
   if (params.has('game')) {
-    const fonts = await loadFonts();
-    void startGame(fonts, null);
+    const fonts = await step('fonts', () => loadFonts());
+    await startGame(fonts, null);
+    loader.status();
     return;
   }
-  player = new IntroPlayer(canvas);
+  player = await step('starting the renderer', () => new IntroPlayer(canvas));
   if (params.has('nosubs')) player.subtitles = false;
-  await player.init();
+  await player.init(step);
   const fit = fitTo((w, h, d, f) => player.pr.resize(w, h, d, f));
   fit();
   window.addEventListener('resize', fit);
@@ -73,25 +77,16 @@ async function boot(): Promise<void> {
   let started = false;
   /** set while a click waits for something still loading; the start screen keeps moving */
   let loading = false;
+  /** which steps that click is waiting for, to name them under LOADING */
+  let waitingFor: readonly string[] = [];
 
-  // Everything slow happens behind the start screen, not after the click: decoding the
-  // voices, compiling the intro's shaders, then building and warming the game. Compiling
-  // shaders on first use is what used to freeze the screen for a second or more.
-  const voices = nextFrame().then(() => player.prepareAudio(audioContext())).then((a) => (performance.mark('intro:voices'), a));
-  const introWarm = player.warmUp().then(() => performance.mark('intro:warm'));
-  let introChosen = false;
-  void introWarm.then(() => {
-    // building the game would stutter the film, so if the intro is already playing it waits
-    // for the film to end
-    if (!introChosen) void prepareGame(player.fonts);
-  });
   // the start screen is the title diorama, idling, with two buttons over it
   const title = player.tl.shots.find((s) => s.name === 'title')!;
   const prompt = (now: number) => (g: CanvasRenderingContext2D) => {
     const f = player.fonts;
     const hover = pointerAt ? hit(pointerAt.x, pointerAt.y) : null;
     if (loading) {
-      loadingLabel(g, f, now);
+      loadingLabel(g, f, now, waitingFor);
       return;
     }
     button(g, f, WATCH, 'WATCH THE INTRO', 'ENTER', hover === WATCH || (hover === null && Math.floor(now * 2) % 2 === 0), C.straw);
@@ -110,7 +105,23 @@ async function boot(): Promise<void> {
     drawStart(now / 1000);
     requestAnimationFrame(idle);
   };
+  // the menu's first frame compiles the title's shaders: a step of its own
+  await step('first menu frame', () => drawStart(0));
+  loader.status();
   requestAnimationFrame(idle);
+
+  // Everything else slow happens behind the start screen, not after the click: decoding the
+  // voices, compiling the intro's shaders, then building and warming the game. Compiling
+  // shaders on first use is what used to freeze the screen for a second or more.
+  // one after another, so the loading log can pin any stall on a single step
+  const voices = step('voices', () => player.prepareAudio(audioContext()));
+  const introWarm = voices.then(() => player.warmUp(step));
+  let introChosen = false;
+  void introWarm.then(() => {
+    // building the game would stutter the film, so if the intro is already playing it waits
+    // for the film to end
+    if (!introChosen) void prepareGame(player.fonts);
+  });
 
   const start = async (e: Event) => {
     if (started) return;
@@ -129,6 +140,7 @@ async function boot(): Promise<void> {
     const ctx = audioContext();
     void ctx.resume();
     loading = true;
+    waitingFor = skip ? GAME_STEPS : INTRO_STEPS;
     if (skip) {
       await startGame(player.fonts, ctx, () => (loading = false));
       return;
@@ -216,7 +228,7 @@ function run(audio: AudioEngine, offset: number, ctx: AudioContext): void {
   const tick = (now: number) => {
     if (gone) return;
     if (leftAt !== null) {
-      player.overlayHook = (g) => loadingLabel(g, player.fonts, now / 1000);
+      player.overlayHook = (g) => loadingLabel(g, player.fonts, now / 1000, GAME_STEPS);
       player.frame(Math.max(0, leftAt));
       requestAnimationFrame(tick);
       return;
@@ -232,14 +244,23 @@ function run(audio: AudioEngine, offset: number, ctx: AudioContext): void {
   requestAnimationFrame(tick);
 }
 
-function loadingLabel(g: CanvasRenderingContext2D, f: Fonts, now: number): void {
+const GAME_STEPS = ['game'];
+const INTRO_STEPS = ['voices', 'intro'];
+
+/** LOADING, and what it is waiting for, over a still-animating screen. */
+function loadingLabel(g: CanvasRenderingContext2D, f: Fonts, now: number, waitingFor: readonly string[]): void {
+  const what = loader.current(waitingFor);
   const text = 'LOADING' + '.'.repeat(1 + (Math.floor(now * 3) % 3));
+  const detail = what ? what.toUpperCase() : '';
+  const w = Math.max(100, f.tiny.measure(detail) + 16);
+  const x = Math.round(240 - w / 2);
   g.fillStyle = C.black;
-  g.fillRect(190, 220, 100, 20);
+  g.fillRect(x, 216, w, detail ? 28 : 20);
   g.fillStyle = C.straw;
-  g.fillRect(190, 220, 100, 1);
-  g.fillRect(190, 239, 100, 1);
-  f.small.draw(g, text, 202, 226, { color: C.straw });
+  g.fillRect(x, 216, w, 1);
+  g.fillRect(x, 216 + (detail ? 27 : 19), w, 1);
+  f.small.draw(g, text, 240 - 30, 222, { color: C.straw });
+  if (detail) f.tiny.draw(g, detail, 240, 233, { color: C.fog, align: 'center' });
 }
 
 const endPrompt = (t: number) => (g: CanvasRenderingContext2D) => {
@@ -260,22 +281,18 @@ const endPrompt = (t: number) => (g: CanvasRenderingContext2D) => {
 let preparing: Promise<{ game: Game; canvas: HTMLCanvasElement }> | null = null;
 function prepareGame(fonts: Fonts): Promise<{ game: Game; canvas: HTMLCanvasElement }> {
   preparing ??= (async () => {
-    await nextFrame();
     const gc = document.createElement('canvas');
     gc.style.cursor = 'none';
     gc.style.display = 'none';
     stage.appendChild(gc);
-    performance.mark('game:build');
-    const game = new Game(gc, fonts);
-    fitGame(game)();
-    performance.mark('game:built');
-    await nextFrame();
-    await game.warm();
-    performance.mark('game:warm');
-    await nextFrame();
+    const game = await loader.step('game: building the level', () => {
+      const g = new Game(gc, fonts);
+      fitGame(g)();
+      return g;
+    });
+    await loader.step('game: compiling shaders', () => game.warm());
     // one real frame compiles what warm() cannot reach (shadow depth, post-processing)
-    game.frame(0);
-    performance.mark('game:ready');
+    await loader.step('game: first frame', () => game.frame(0));
     return { game, canvas: gc };
   })();
   return preparing;
@@ -398,6 +415,8 @@ function wireInput(game: Game, el: HTMLCanvasElement): void {
   });
   window.addEventListener('keyup', (e) => inp.keys.delete(e.key.toLowerCase()));
   window.addEventListener('wheel', (e) => {
+    // the loading log scrolls; everywhere else the wheel zooms
+    if (e.target instanceof Element && e.target.closest('#loading')) return;
     e.preventDefault();
     inp.wheel += Math.sign(e.deltaY);
   }, { passive: false });

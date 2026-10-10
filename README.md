@@ -34,6 +34,14 @@ FEED (hold, while flying with the other thumb), HONK, GATE, and turn and zoom. T
 rows of the top-right panel and the buttons on the verdict card can also be clicked with a mouse.
 `F` (or clicking the objective panel) shows the frame rate, main-thread time and draw calls.
 
+**If something stalls.** Every slow piece of start-up is a named loading step. Until the menu is
+up, a loading panel lists them, so a frozen screen shows the step that froze it (the yellow
+line). Behind the menu, the remaining steps (voices, shader compiles, building the game) are
+shown in a status line in the bottom-left corner, and if a button has to wait for one, its
+LOADING box names it. `L` (or tapping the status line) opens the loading log: every step with
+its time, and every frame over 100 ms with the steps that were running during it. The same
+lines go to the browser console, prefixed `[autosheep]`.
+
 | Command | What it does |
 |---|---|
 | `npm run build` | Typecheck and build to `dist/` |
