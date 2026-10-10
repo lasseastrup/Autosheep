@@ -149,6 +149,8 @@ export class Motion {
       const near = obs.near(px[i], py[i]);
       for (let q = 0; q < near.length; q++) {
         const k = near[q];
+        // Autosheep: a flap gives way to a sheep that started the step behind it
+        if (obs.passable(k, prevX[i], prevY[i])) continue;
         const ax = obs.ax[k];
         const ay = obs.ay[k];
         const ex = obs.bx[k] - ax;

@@ -501,6 +501,8 @@ export class Steering {
       let hit = Infinity;
       for (let q = 0; q < near.length; q++) {
         const k = near[q];
+        // Autosheep: a flap is no danger from behind; the sheep can push through it
+        if (obstacles.passable(k, x, y)) continue;
         const t = rayCapsule(x, y, ux, uy, obstacles.ax[k], obstacles.ay[k], obstacles.bx[k], obstacles.by[k], obstacles.radius[k] + r);
         if (t < hit) hit = t;
       }

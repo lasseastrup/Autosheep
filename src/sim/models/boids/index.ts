@@ -1,4 +1,4 @@
-import { hashOutputs, segmentT, SheepState, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
+import { behindFlap, hashOutputs, segmentT, SheepState, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
 
 /**
  * A deliberately simple boids flock behind the same contract. It is not meant to be fun to
@@ -124,6 +124,7 @@ export class BoidsModel implements FlockModel {
       dy += Math.sin(this.wander[i]) * 0.1;
       // fences: steer away from anything closer than 1.5 m
       for (const o of this.fences) {
+        if (behindFlap(o, x[i], y[i])) continue;
         const t = segmentT(x[i], y[i], o.ax, o.ay, o.bx, o.by);
         const px = x[i] - (o.ax + (o.bx - o.ax) * t);
         const py = y[i] - (o.ay + (o.by - o.ay) * t);
@@ -158,6 +159,8 @@ export class BoidsModel implements FlockModel {
 
   /** push sheep i out of fence o, back to the side it started the step on */
   private keepSide(i: number, o: Obstacle, ox: number, oy: number): void {
+    // a flap gives way to a sheep that started the step behind it
+    if (behindFlap(o, ox, oy)) return;
     const R = o.radius + 0.45;
     const t = segmentT(this.x[i], this.y[i], o.ax, o.ay, o.bx, o.by);
     const cx = o.ax + (o.bx - o.ax) * t;

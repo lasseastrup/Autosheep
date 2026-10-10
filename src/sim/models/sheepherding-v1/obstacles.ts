@@ -12,6 +12,10 @@ export class Obstacles {
   by = new Float32Array(0);
   radius = new Float32Array(0);
   solid = new Uint8Array(0);
+  /** Autosheep: flaps, passable along (passX, passY) only */
+  oneWay = new Uint8Array(0);
+  passX = new Float32Array(0);
+  passY = new Float32Array(0);
   count = 0;
   readonly cellSize: number;
   readonly cols: number;
@@ -36,10 +40,18 @@ export class Obstacles {
     this.by = new Float32Array(n);
     this.radius = new Float32Array(n);
     this.solid = new Uint8Array(n);
+    this.oneWay = new Uint8Array(n);
+    this.passX = new Float32Array(n);
+    this.passY = new Float32Array(n);
     list.forEach((o, k) => {
       this.ax[k] = o.ax; this.ay[k] = o.ay; this.bx[k] = o.bx; this.by[k] = o.by;
       this.radius[k] = o.radius;
       this.solid[k] = o.solid ? 1 : 0;
+      if (o.oneWay) {
+        this.oneWay[k] = 1;
+        this.passX[k] = o.oneWay.dx;
+        this.passY[k] = o.oneWay.dy;
+      }
     });
     // conservative rasterisation: a segment is listed in every cell its padded bounding box
     // touches and that lies within reach of the segment itself
@@ -83,6 +95,11 @@ export class Obstacles {
     return Math.hypot(x - (ax + ex * t), y - (ay + ey * t));
   }
 
+  /** Autosheep: is (x, y) behind flap k, where it may push through? False for other fences. */
+  passable(k: number, x: number, y: number): boolean {
+    return this.oneWay[k] === 1 && (x - this.ax[k]) * this.passX[k] + (y - this.ay[k]) * this.passY[k] < 0;
+  }
+
   /** Segment indices that may lie within `reach` of (x, y). */
   near(x: number, y: number): Int32Array {
     if (this.count === 0) return EMPTY;
@@ -102,6 +119,8 @@ export class Obstacles {
     const near = this.near((x0 + x1) / 2, (y0 + y1) / 2);
     for (let q = 0; q < near.length; q++) {
       const k = near[q];
+      // flaps do not split a flock into groups
+      if (this.oneWay[k]) continue;
       if (segmentsCross(x0, y0, x1, y1, this.ax[k], this.ay[k], this.bx[k], this.by[k])) return true;
     }
     return false;
@@ -110,6 +129,7 @@ export class Obstacles {
   /** Does any fence cut the line from (x0, y0) to (x1, y1), however long? */
   crossesAny(x0: number, y0: number, x1: number, y1: number): boolean {
     for (let k = 0; k < this.count; k++) {
+      if (this.oneWay[k]) continue;
       if (segmentsCross(x0, y0, x1, y1, this.ax[k], this.ay[k], this.bx[k], this.by[k])) return true;
     }
     return false;

@@ -60,6 +60,17 @@ export interface Obstacle {
   radius: number;
   /** true when sheep cannot see through it (stone wall); false for hurdles and wire */
   solid: boolean;
+  /**
+   * A flap: sheep travelling along (dx, dy) push through it from the side it points away
+   * from, and are stopped like any fence coming the other way. Flaps do not split a flock
+   * into groups. Hurdles only, never solid.
+   */
+  oneWay?: { dx: number; dy: number };
+}
+
+/** Is (x, y) on the side of one-way obstacle o that sheep may pass from? */
+export function behindFlap(o: Obstacle, x: number, y: number): boolean {
+  return !!o.oneWay && (x - o.ax) * o.oneWay.dx + (y - o.ay) * o.oneWay.dy < 0;
 }
 
 export interface FlockInit {

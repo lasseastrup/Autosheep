@@ -29,6 +29,29 @@ function flock(make: () => FlockModel, seed: number, n = 30, cx = 30, cy = 30, w
 }
 
 describe.each(MODELS)('$name', ({ make, full }) => {
+  test('a flap lets sheep through one way only', () => {
+    // a corridor 6 m wide along x, with a flap across it at x = 30 that opens eastward
+    const side = (y: number): Obstacle => ({ ax: 0, ay: y, bx: 60, by: y, radius: 0.08, solid: false });
+    const flap: Obstacle = { ax: 30, ay: 27, bx: 30, by: 33, radius: 0.08, solid: false, oneWay: { dx: 1, dy: 0 } };
+    const m = flock(make, 4, 12, 22, 30);
+    m.setObstacles([side(27), side(33), flap]);
+    // driven east, they push through
+    let x = 14;
+    run(m, 30, () => {
+      x = Math.min(29, x + m.dt * 1.2);
+      return [{ id: 1, kind: 'threat', x, y: 30, strength: 1, radius: 10 }];
+    });
+    const through = countIn(m, 30, 27, 60, 33);
+    expect(through).toBeGreaterThanOrEqual(10);
+    // driven back west, the flap holds
+    let x2 = 52;
+    run(m, 30, () => {
+      x2 = Math.max(32, x2 - m.dt * 1.2);
+      return [{ id: 2, kind: 'threat', x: x2, y: 30, strength: 1, radius: 10 }];
+    });
+    expect(countIn(m, 30, 27, 60, 33)).toBe(through);
+  });
+
   test('moves away from an approaching threat', () => {
     const m = flock(make, 3);
     const c0 = centroid(m);
