@@ -15,7 +15,7 @@
 | Stack | TypeScript, three.js, Vite. Flock sim in Web Workers |
 | Tone | Futurama, Rick and Morty, The Hitchhiker's Guide to the Galaxy: dry, absurd, warm |
 | Comparables | Factorio, Satisfactory, Shapez, Dyson Sphere Program; for flocks: Tiny Glade's gentleness, Untitled Goose Game's slapstick |
-| Status | M0 done (intro, pixel pipeline). M1 playable: one level, herd 30 sheep into a pen |
+| Status | M0, M1 done; the M2 herdway prototype built and set aside for grazing (§14.5). M2b "The Valley" in progress |
 
 Related documents:
 
@@ -33,8 +33,8 @@ Aliens invaded Earth and, by an honest bureaucratic mistake, wiped out the human
 sparing the sheep. Galactic law says an invader may exterminate any species *except the dominant
 one*. The invasion is therefore illegal unless the sheep turn out to be more advanced than the
 humans were. General Gafoop has been exiled to Earth until they are. You cannot teach a sheep
-anything. But you **can** build fences, gates, races, gongs, clockwork collies, treadmills, mills and
-railways, and arrange them so cleverly that a civilisation happens *around* the sheep. Sheep walk
+anything. But you **can** build fences, gates, paddocks, troughs, woof posts, clockwork collies,
+treadmills, mills and railways, and arrange them so cleverly that a civilisation happens *around* the sheep. Sheep walk
 through your systems, and wool, stone, bronze, iron and steam come out the other end. The sheep
 never notice.
 
@@ -44,9 +44,12 @@ never notice.
    intelligence in the game lives in the player's infrastructure. Every sheep behaviour comes
    from a real flocking model (fear, following, bunching, grazing, panic). The comedy depends on
    this rule never breaking.
-2. **The belts are alive.** Logistics is herding. Throughput, jams, leaks and failures come from
-   flock behaviour, not from abstract rules. A well-designed herdway feels like a perfect belt. A
-   bad one produces a stampede, and that should be funny, not punishing.
+2. **The flock moves itself.** There are no belts. Sheep go where hunger, fear and each other
+   take them, and the player shapes the land so that where the flock wants to go is where the
+   work gets done: paddocks, gates and gateway yards, a grazing rotation that walks the flock
+   through the shearing shed on its way to fresh grass. Throughput, jams, leaks and failures
+   come from flock behaviour, not from abstract rules. A bad design produces a stampede, and
+   that should be funny, not punishing.
 3. **Real livestock science, silly consequences.** Every routing rule is a real handling
    principle: flight zones, point of balance, curved races, avoiding shadows and dead ends,
    follow-the-leader. Players who learn the game learn something true about sheep.
@@ -55,19 +58,23 @@ never notice.
    Almanac of Regrettable Decisions narrates it all with a straight face.
 5. **A diorama you want to stare at.** Pixel-perfect isometric art and readable motion: a
    factory of a thousand sheep should look like a living tapestry, not spreadsheet noise.
+6. **By hand first, then automated.** Every job starts as something Gafoop does himself:
+   leading the flock with a bucket, opening a gate, shearing a sheep, spinning a fleece. Every
+   device then does one of those jobs for him. The world is one persistent valley that grows
+   with what he builds; there are no levels.
 
 ### 1.3 What makes it different from Factorio
 
 | Factorio / Satisfactory | Autosheep | Why it is interesting |
 |---|---|---|
-| Conveyor belt | **Herdway**: a fenced lane ("race") that sheep walk along | Throughput depends on sheep speed, spacing and willingness; jams and back-pressure are emergent |
+| Conveyor belt | **Grazing rotation**: paddocks joined by gates; the flock walks itself to fresh grass | Throughput depends on grass, hunger, flock size and gate timing; jams and leaks are emergent |
 | Item on a belt | A **sheep carrying a pack** (saddlebag), or the sheep itself (wool grows on it) | The item and the carrier are the same creature; your "belt items" get hungry and scared |
-| Belt motor | **Drivers**: Gafoop's crook, gongs, clockwork collies, scarecrows | Pressure must be applied correctly (point of balance) and *released*, or flocks split |
-| Inserter | **Gates** and **loading pens** | Timing, batching (sheep hate being alone) and priming delays |
+| Belt motor | **Pulls** (grass, troughs, the bucket) and **pushes** (the Woof-Woof, woof posts, collies) | Pulling is gentle and slow; pushing is fast but frightened sheep grow less wool |
+| Inserter | **Gates** and **gateway yards** | Hand, timed and grass-sensing gates; timing, batching (sheep hate being alone) and priming delays |
 | Splitter / filter | **Splitter gates**, **dye sorters** | Sort by colour tag, breed or load. Shed groups that are too small run back |
 | Underground belt | **Tunnels** and **bridges** | Sheep refuse dark tunnels; lanterns are the "upgrade" |
 | Chest / buffer | **Pens** and holding paddocks | Idle sheep graze, spread out and get hungry, so buffers have upkeep |
-| Assembler / smelter | **Stations**: shearing shed, spinnery, quarry, smithy, mill | Sheep walk in and something walks or rolls out |
+| Assembler / smelter | **Stations** in the gateways between paddocks: shearing shed, spindle hut, quarry, smithy, mill | The flock passes through on its way to dinner, and something walks out with it |
 | Mining drill | **Haul sites**: quarries and mines where sheep collect ore in packs | Output is limited by how many sheep you can cycle through |
 | Power | Treadmills → water wheels → windmills → steam | Early power is literally sheep walking in circles |
 | Trains | **Drove roads** with robodogs → **sheep rail** | Batch logistics over long distances |
@@ -542,17 +549,22 @@ sign Form 77-B in orbit, then roll credits).
 Gafoop hovers on his disc above the map (no pathfinding pain). He is the most important driver
 in the early game and becomes a manager later.
 
-**Sheep react to Gafoop by proximity alone.** There is no "scare" button: he is always a threat,
-and how much depends only on how close he is and how fast he closes in, exactly like a dog or a
-shepherd. Herding is positioning: work the edge of the flight zone, approach slowly to walk a
-flock, quickly to make it run. (Playtest note from M1: a press button with a drawn radius made
-it unclear whether sheep were reacting to him or to the clicks.)
+**Gafoop is harmless until the Woof-Woof.** At first the sheep ignore him; he leads them with
+the feed bucket and shapes where they go with hurdles and gates. The **Woof-Woof 3000** (a
+Blorxian speaker playing the last recording of a dog) arrives once the Bureau approves Form
+27-B, *Request for Coercive Apparatus*. While it is on he is a threat by proximity, exactly like
+a dog: work the edge of the flight zone, approach slowly to walk a flock, quickly to make it
+run. Frightened sheep grow less wool, so pushing has a price; later the speaker can be placed
+in the world as **woof posts**. (Playtest notes: from M1, a press button with a drawn radius made
+it unclear whether sheep were reacting to him or to the clicks; from M2, scaring should be
+earned, not the first thing you do.)
 
 | Ability | Input | Notes |
 |---|---|---|
-| Hover | Follows the mouse | Fast, ignores terrain. His presence is the threat |
-| **Feed bucket** | Hold a mouse button | A lure (a bribe of oats). While he rattles it, sheep forgive him being close |
-| **Megaphone** | Space | Startle pulse with cooldown. Very effective; very stressful |
+| Hover | Follows the mouse | Fast, ignores terrain. Harmless until the Woof-Woof |
+| **Feed bucket** | Hold a mouse button | A lure (a bribe of oats). From the start |
+| **Shears, hand spindle** | Hold near a sheep / with fleece | Shearing and spinning by hand, slowly, until the shed and the spindle hut take over |
+| **Woof-Woof** | Space (hold) | Unlocked by Form 27-B. A bark (startle) and then a threat while held. Very effective; costs wool |
 | **Whistle commands** | 1–4 | Direct nearby mechanical herders (Iron+): come by, away, walk up, lie down (real sheepdog commands, learned from human books) |
 | **Build mode** | B / toolbar | Grid placement, drag-to-draw fences and races, rotation, blueprints (copy/paste) |
 | Inspect | Hover a sheep | Name (auto-generated, e.g. "Dolly 3,412"), stats, pack, tag, last opinion ("Baa") |
@@ -731,7 +743,8 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 |---|---|---|
 | **M0 — Foundations** ✅ | Pixel pipeline, audio engine, voice pipeline, intro cutscene | Intro plays in browser; movie export works |
 | **M1 — A flock in a field** ✅ | Flock contract + current model behind it; chunked terrain; Gafoop avatar; herding by proximity; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
-| **M2 — The first herdway** 🟡 | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes |
+| **M2 — The first herdway** ✅ | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes (met; then set aside, §14.5) |
+| **M2b — The Valley** 🟡 | One persistent valley with saves; Bureau Forms instead of levels; grazing; harmless Gafoop, bucket first, the Woof-Woof as an unlock; shearing and spinning by hand; hand, timed and grass gates; troughs; stations in gateways | From a new game, do everything by hand, then build a grazing rotation that keeps shearing for 10 minutes with nobody herding |
 | **M3 — Stone Age vertical slice** | Quarry, treadmill power, thinking stones, research, Audit I + Ewehenge, save/load | 2 hours of play from the intro to Audit I |
 | **M4 — Bronze and Iron** | Automaton herders, clockwork collies, gongs, dye sorting, bell-wethers, smelting, lanterns, tunnels, water and wind | Audits II and III playable |
 | **M5 — Industrial** | Steam, travelators, rail, robodogs, signal logic; performance work for 5k sheep | Audit IV playable at target performance |
@@ -791,8 +804,35 @@ the flock jamming, never a scripted queue):
 9. ✅ The exit criterion is a test (`tests/works.test.ts`): the reference loop makes yarn for
    ten simulated minutes with nobody herding and no sheep getting out.
 
-Still open for M2: hand gates the player can place, and playtesting whether building the loop
-by hand is fun and readable.
+Playtest verdict: it works, but closed single-file races are too close to Factorio's belts, and
+the flock's own behaviour should be the selling point. M2's races, flaps and racks stay in the
+code (and its test), but leave the toolbar; the stations and their fill/work/release cycle carry
+on into M2b.
+
+### 14.5 M2b build: The Valley
+
+1. **Grazing** ✅ (§4.5): the grass field, hunger, sheep that move on when a field is bare, and
+   volumetric pixel-art grass that shows it.
+2. **One persistent valley**: the meadow is the world; everything built stays; the game saves
+   itself (browser storage) and carries on where it was left. Every fence, the first pen
+   included, is a device in the works.
+3. **Bureau Forms** instead of levels, on a clipboard: each asks for something and brings a
+   supply drop. 8-A *pen the flock* (the pen is delivered; lead them in with the bucket), 10-B
+   *ten fleeces* (shears), 12-C *thirty skeins* (hand spindle; the shed and spindle hut are
+   delivered), 27-B *coercive apparatus* (the Woof-Woof), 31-A *industry without supervision*
+   (timed and grass gates; yarn made with nobody herding). Cheats: SKIP completes the current
+   Form, SOLVE builds its reference setup.
+4. **Harmless Gafoop**: no threat and no honk until the Woof-Woof, which then works like the old
+   proximity threat with a bark on top.
+5. **By hand**: shearing (hold near a woolly sheep that is standing still) and spinning (hold
+   with a fleece in hand); fleece and yarn are Gafoop's stock.
+6. **Wool needs a fed, calm sheep**: wool regrows only while a sheep is not hungry, and slower
+   while it has been frightened.
+7. **Gates**: hurdle gates the player places; opened by hand (Gafoop nearby), on a timer, or when
+   the grass on one side is grazed down. **Troughs**: a lure Gafoop fills by hand.
+8. **The toolbar**: hurdle, gate, trough, shed, spindle, remove (races, flaps and racks go).
+9. **Exit test**: a grazing rotation in the valley shears and spins for ten simulated minutes
+   with nobody herding.
 
 ---
 
@@ -824,8 +864,12 @@ Decided (October 2026):
 | Multiplayer | Not planned; the sim stays deterministic anyway (default taken) |
 | Sheep welfare | Nothing bad ever happens to a sheep: tired sheep rest, stressed sheep recover (default taken) |
 | Pacing | About 90 minutes to Audit I (default taken, to verify in playtests) |
+| Logistics | No conveyor-like races in the early game; the flock moves itself by grazing, through paddocks and gates (after the M2 playtest) |
+| World | One persistent valley that grows, with Bureau Forms as goals; no levels. A hand-made starter valley first, procedural land beyond it later |
+| Herding | Gafoop is harmless at first: the bucket leads. The Woof-Woof speaker (the old threat and honk) is unlocked by a Form and later placeable; pushing costs wool |
+| Automation | By hand first, then devices that each copy one of Gafoop's jobs (no record-and-replay helper) |
 
-Still open: nothing blocking M2.
+Still open: nothing blocking M2b.
 
 ---
 
