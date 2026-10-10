@@ -12,6 +12,15 @@ spindle hut that makes yarn on its own. The flock runs behind a model-independen
 behaviour tests.
 The game design is in [`docs/DESIGN.md`](docs/DESIGN.md).
 
+## Play it
+
+**https://lasseastrup.github.io/Autosheep/**, rebuilt and redeployed by GitHub Actions
+(`.github/workflows/pages.yml`) on every push to the main line of work, once the tests pass.
+
+On an iPhone, open it in Safari and choose Share → **Add to Home Screen**: started from the
+Home Screen it runs full screen, without Safari's bars (turn the phone sideways). On Android,
+Chrome offers to install it.
+
 ## Running
 
 ```

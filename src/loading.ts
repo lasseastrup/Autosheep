@@ -149,7 +149,7 @@ class Loader {
     style.textContent = `
       #loading { position: fixed; z-index: 10; font: 12px/1.5 Silkscreen, ui-monospace, Menlo, Consolas, monospace; color: #c7dcd0; }
       #loading.boot { inset: 0; display: flex; align-items: center; justify-content: center; background: #18141a; }
-      #loading.status { left: 12px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); cursor: pointer; }
+      #loading.status { left: calc(12px + env(safe-area-inset-left, 0px)); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); cursor: pointer; }
       #loading .panel { background: #2e222f; border: 1px solid #fbb954; padding: 14px 18px; min-width: min(360px, 80vw); max-width: 92vw; max-height: 80vh; overflow: auto; touch-action: pan-y; overscroll-behavior: contain; }
       #loading.status .panel { background: rgba(24, 20, 26, 0.85); border-color: #625565; padding: 4px 8px; min-width: 0; }
       #loading.status.log { left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%); cursor: default; }
