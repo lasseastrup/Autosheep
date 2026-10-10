@@ -481,6 +481,7 @@ export class Game {
       case 'bigger': inp.hits.push('n'); break;
       case 'perf': inp.hits.push('f'); break;
       case 'perfTest': inp.hits.push('p'); break;
+      case 'skip': inp.hits.push(']'); break;
       case 'next': inp.hits.push('l'); break;
       case 'keep': inp.hits.push('k'); break;
       case 'build': inp.hits.push('b'); break;
@@ -507,6 +508,12 @@ export class Game {
       if (k === 'f') this.showPerf = !this.showPerf;
       if (k === 'p') this.startPerfTest();
       if (!this.started) continue;
+      // the cheat: on to the next level, won or not (round to the first after the last)
+      if (k === ']') {
+        this.load(this.hasNext ? this.spec.id + 1 : LEVELS[0].id);
+        this.quip('start', 0.8, false);
+        continue;
+      }
       const card = this.won && !this.won.dismissed;
       if (this.spec.kind === 'herdway' && !card) {
         if (k === 'b') {

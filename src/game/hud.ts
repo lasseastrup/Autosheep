@@ -16,7 +16,7 @@ export const TOOL_LABEL: Record<ToolId, string> = {
 
 export type ButtonId =
   | 'gate' | 'honk' | 'feed' | 'rotL' | 'rotR' | 'zoomIn' | 'zoomOut' | 'again' | 'bigger' | 'next' | 'keep' | 'perf' | 'perfTest'
-  | 'speed' | 'build' | 'flow' | 'finish' | 'cancel' | 'rotate' | `tool:${ToolId}`;
+  | 'skip' | 'speed' | 'build' | 'flow' | 'finish' | 'cancel' | 'rotate' | `tool:${ToolId}`;
 export interface Button {
   id: ButtonId;
   x: number;
@@ -52,8 +52,8 @@ export function hudButtons(L: HudLayout): Button[] {
       { id: 'flow', x: W - 50, y: 44, w: 44, h: 16 },
     );
   }
-  // with the readout showing, a button under it runs the perf test
-  if (L.perf) b.push(PERF_TEST);
+  // with the readout showing, buttons under it run the perf test and skip to the next level
+  if (L.perf) b.push(PERF_TEST, SKIP);
   if (L.won) {
     if (L.won.age > 1.6) {
       const n = L.won.buttons.length;
@@ -91,6 +91,7 @@ export function hudButtons(L: HudLayout): Button[] {
 }
 
 const PERF_TEST: Button = { id: 'perfTest', x: 6, y: 68, w: 124, h: 13 };
+const SKIP: Button = { id: 'skip', x: 134, y: 68, w: 86, h: 13 };
 
 export function buttonAt(buttons: Button[], x: number, y: number): ButtonId | null {
   // later buttons sit on top
@@ -155,6 +156,9 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
     const b = PERF_TEST;
     panel(g, b.x, b.y, b.w, b.h, { fill: s.held.has('perfTest') ? C.coal : C.ink, border: C.gold, shadow: null });
     f.small.draw(g, s.touch ? 'RUN PERF TEST' : 'RUN PERF TEST [P]', b.x + 5, b.y + 3, { color: C.gold });
+    const k = SKIP;
+    panel(g, k.x, k.y, k.w, k.h, { fill: s.held.has('skip') ? C.coal : C.ink, border: C.gold, shadow: null });
+    f.small.draw(g, s.touch ? 'SKIP LEVEL' : 'SKIP LEVEL []]', k.x + 5, k.y + 3, { color: C.gold });
   }
 
   // --- gate (or speed) and megaphone
