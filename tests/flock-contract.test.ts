@@ -29,6 +29,24 @@ function flock(make: () => FlockModel, seed: number, n = 30, cx = 30, cy = 30, w
 }
 
 describe.each(MODELS)('$name', ({ make, full }) => {
+  test('a race draws the sheep in it along, round a corner', () => {
+    // an L-shaped race 2.4 m wide: east along y = 30, then north up x = 40
+    const path = [{ x: 8, y: 30 }, { x: 40, y: 30 }, { x: 40, y: 6 }];
+    const h = 1.2;
+    const fence = (ax: number, ay: number, bx: number, by: number): Obstacle => ({ ax, ay, bx, by, radius: 0.08, solid: false });
+    const m = make();
+    m.init({ seed: 5, width: 60, height: 60, sheep: [11, 12.5, 14, 15.5, 17, 18.5].map((x) => ({ x, y: 30, heading: 0 })) });
+    m.setObstacles([
+      // outside of the bend, inside of the bend, and the closed back end
+      fence(8, 30 + h, 40 + h, 30 + h), fence(40 + h, 30 + h, 40 + h, 6),
+      fence(8, 30 - h, 40 - h, 30 - h), fence(40 - h, 30 - h, 40 - h, 6),
+      fence(8, 30 - h, 8, 30 + h),
+    ]);
+    run(m, 50, () => [{ id: 1, kind: 'flow', x: path[0].x, y: path[0].y, path, strength: 1, radius: h + 0.4 }]);
+    // round the corner and on up the far leg (or out of its end)
+    expect(countIn(m, 0, 0, 60, 26)).toBeGreaterThanOrEqual(5);
+  });
+
   test('a flap lets sheep through one way only', () => {
     // a corridor 6 m wide along x, with a flap across it at x = 30 that opens eastward
     const side = (y: number): Obstacle => ({ ax: 0, ay: y, bx: 60, by: y, radius: 0.08, solid: false });

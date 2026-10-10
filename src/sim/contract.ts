@@ -26,14 +26,19 @@ export const STATE_NAMES = ['graze', 'alert', 'walk', 'run', 'rest'] as const;
  *
  * - `threat`: pressure. Sheep move away from it, more urgently the faster it closes on them.
  *   Gafoop, a scarecrow, a clockwork collie. A threat that keeps its distance becomes scenery.
- * - `lure`: attraction. Sheep within reach walk toward it and gather round. A feed bucket.
+ * - `lure`: attraction. Sheep within reach walk toward the strongest one and gather round. A
+ *   feed bucket, a salt lick. Like a threat, it is hard to sense through a solid wall.
  * - `startle`: a one-tick shock (megaphone, gong, car alarm). Everything within reach that can
  *   hear it jumps; it never habituates.
  *
- * Still to come, when a milestone needs them: `flow` (a goal flow field) and `leader`
- * (a bell-wether the flock follows).
+ * - `flow`: a race's pull. Sheep within `radius` of `path` are drawn along it toward its end
+ *   (at a point `lookahead` ahead of them on it, and past the end once they get there), the
+ *   way a line of sheep keeps going the way it is going. It competes with lures: a sheep
+ *   follows whichever pulls hardest, so a station's bait still wins at its door.
+ *
+ * Still to come, when a milestone needs it: `leader` (a bell-wether the flock follows).
  */
-export type StimulusKind = 'threat' | 'lure' | 'startle';
+export type StimulusKind = 'threat' | 'lure' | 'startle' | 'flow';
 
 export interface Stimulus {
   /** Stable id: the model tracks velocity and habituation per source across ticks. */
@@ -45,6 +50,45 @@ export interface Stimulus {
   strength: number;
   /** Reach in metres: the flight zone of a threat at full pressure, a lure's call distance. */
   radius: number;
+  /** flow only: the line sheep are drawn along, first point to last (x, y are its start) */
+  path?: readonly { x: number; y: number }[];
+  /** flow only: how far ahead along the path a sheep is drawn to (metres, default 3) */
+  lookahead?: number;
+}
+
+/**
+ * Where a flow draws a sheep at (x, y): the point `lookahead` further along `path` than the
+ * path's closest point, carried on past the end. `d` is the sheep's distance from the path.
+ */
+export function flowTarget(path: readonly { x: number; y: number }[], x: number, y: number, lookahead: number): { d: number; tx: number; ty: number } {
+  let best = Infinity;
+  let bestS = 0;
+  let s = 0;
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const l = Math.hypot(b.x - a.x, b.y - a.y);
+    const t = segmentT(x, y, a.x, a.y, b.x, b.y);
+    const d = Math.hypot(x - (a.x + (b.x - a.x) * t), y - (a.y + (b.y - a.y) * t));
+    if (d < best) {
+      best = d;
+      bestS = s + t * l;
+    }
+    s += l;
+  }
+  let want = bestS + lookahead;
+  for (let i = 0; i + 1 < path.length; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const l = Math.hypot(b.x - a.x, b.y - a.y);
+    const last = i + 2 === path.length;
+    if (want <= l || last) {
+      const k = l > 1e-9 ? want / l : 0;
+      return { d: best, tx: a.x + (b.x - a.x) * k, ty: a.y + (b.y - a.y) * k };
+    }
+    want -= l;
+  }
+  return { d: best, tx: path[0]?.x ?? x, ty: path[0]?.y ?? y };
 }
 
 /**

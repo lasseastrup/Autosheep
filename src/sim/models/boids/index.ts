@@ -1,4 +1,4 @@
-import { behindFlap, hashOutputs, segmentT, SheepState, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
+import { behindFlap, flowTarget, hashOutputs, segmentT, SheepState, type FlockInit, type FlockModel, type FlockOutputs, type Obstacle, type Stimulus } from '../../contract';
 
 /**
  * A deliberately simple boids flock behind the same contract. It is not meant to be fun to
@@ -71,7 +71,7 @@ export class BoidsModel implements FlockModel {
     for (let i = 0; i < n; i++) {
       let f = prevFear[i] * Math.exp(-dt / 4);
       for (const s of stimuli) {
-        if (s.kind === 'lure') continue;
+        if (s.kind === 'lure' || s.kind === 'flow') continue;
         const d = Math.hypot(s.x - x[i], s.y - y[i]);
         const reach = s.kind === 'startle' ? s.radius : s.radius * 0.6;
         f = Math.max(f, Math.min(1, s.strength * smooth(reach, reach * 0.3, d)));
@@ -105,7 +105,20 @@ export class BoidsModel implements FlockModel {
         dx += cx * k + (ax / cn) * 0.3;
         dy += cy * k + (ay / cn) * 0.3;
       }
+      let walking = false;
       for (const s of stimuli) {
+        if (s.kind === 'flow') {
+          // a race: pulled toward a point a little ahead along it
+          const r = flowTarget(s.path ?? [], x[i], y[i], s.lookahead ?? 3);
+          if (r.d > s.radius) continue;
+          const fx = r.tx - x[i];
+          const fy = r.ty - y[i];
+          const fd = Math.hypot(fx, fy) || 1;
+          dx += (fx / fd) * s.strength * 1.5;
+          dy += (fy / fd) * s.strength * 1.5;
+          walking = true;
+          continue;
+        }
         const ox = x[i] - s.x;
         const oy = y[i] - s.y;
         const d = Math.hypot(ox, oy) || 1;
@@ -131,7 +144,8 @@ export class BoidsModel implements FlockModel {
         const d = Math.hypot(px, py);
         if (d < 1.5 && d > 1e-6) { dx += (px / d) * (1.5 - d) * 2; dy += (py / d) * (1.5 - d) * 2; }
       }
-      const max = 0.4 + 3.6 * fear[i];
+      // a sheep in a race walks along it rather than ambling
+      const max = Math.max(walking ? 1.1 : 0, 0.4 + 3.6 * fear[i]);
       const l = Math.hypot(dx, dy);
       const tx = l > max ? (dx / l) * max : dx;
       const ty = l > max ? (dy / l) * max : dy;

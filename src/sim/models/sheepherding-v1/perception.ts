@@ -1,3 +1,4 @@
+import { flowTarget, type Stimulus } from '../../contract';
 import type { SimConfig } from './config';
 import { Flock, FEAR_HIST, MAX_NEIGHBOURS } from './flock';
 import type { Obstacles } from './obstacles';
@@ -49,6 +50,7 @@ export class Perception {
     obstacles: Obstacles,
     time: number,
     dt: number,
+    flows: readonly Stimulus[] = [],
   ): void {
     const cfg = this.cfg;
     const P = cfg.pressure;
@@ -90,13 +92,25 @@ export class Perception {
       }
       shock = Math.min(1, shock);
 
-      // Autosheep: the strongest lure in reach
+      // Autosheep: the strongest lure in reach; like a threat, it is hard to sense through a
+      // stone wall (a shut shed is not tugged at by the salt lick outside its back door)
       let lure = 0;
       for (let k = 0; k < lures.length; k++) {
         const l = lures[k];
         const d = Math.hypot(l.x - x, l.y - y);
-        const v = l.strength * smoothstep(l.radius, l.radius * 0.5, d);
+        let v = l.strength * smoothstep(l.radius, l.radius * 0.5, d);
+        if (v > lure && obstacles.blocksSight(x, y, l.x, l.y)) v *= sight;
         if (v > lure) { lure = v; flock.lureX[i] = l.x; flock.lureY[i] = l.y; }
+      }
+      // Autosheep: a race draws the sheep in it along, as a lure that keeps ahead of them
+      for (let k = 0; k < flows.length; k++) {
+        const fl = flows[k];
+        if (fl.strength <= lure) continue;
+        const r = flowTarget(fl.path!, x, y, fl.lookahead ?? 3);
+        if (r.d > fl.radius) continue;
+        lure = fl.strength;
+        flock.lureX[i] = r.tx;
+        flock.lureY[i] = r.ty;
       }
       flock.lure[i] = Math.min(1, lure);
 
