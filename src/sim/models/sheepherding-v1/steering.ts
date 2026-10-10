@@ -123,6 +123,8 @@ export class Steering {
       const tx = threat ? threat.x + threat.vx * cfg.pressure.lookahead : 0;
       const ty = threat ? threat.y + threat.vy * cfg.pressure.lookahead : 0;
       const remembered = flock.seenUntil[i] > time;
+      // Autosheep: pulls toward other sheep mostly give up when a fence is in the way
+      const fencedK = flock.fenced[i] ? G.fencedPull : 1;
 
       // Is the threat standing between me and the rest of the flock? A sheep will not cross a dog
       // to rejoin, and suppressing the pull toward the others in exactly that case is what lets a
@@ -154,7 +156,7 @@ export class Steering {
               const dx = flock.lcmX[i] - x;
               const dy = flock.lcmY[i] - y;
               const d = Math.hypot(dx, dy);
-              if (d > 1e-3) this.lobe(interest, base, dx / d, dy / d, cfg.graze.rejoinWeight * flock.gregarious[i]);
+              if (d > 1e-3) this.lobe(interest, base, dx / d, dy / d, cfg.graze.rejoinWeight * flock.gregarious[i] * fencedK);
             }
             this.rejoinLobe(flock, groups, i, base, x, y, blocked ? -1 : G.rejoinWeight);
             // spread out: crowding is danger
@@ -221,7 +223,7 @@ export class Steering {
             const dx = flock.lcmX[i] - x;
             const dy = flock.lcmY[i] - y;
             const d = Math.hypot(dx, dy);
-            if (d > 2) this.lobe(interest, base, dx / d, dy / d, cfg.walk.cohesionWeight * flock.gregarious[i]);
+            if (d > 2) this.lobe(interest, base, dx / d, dy / d, cfg.walk.cohesionWeight * flock.gregarious[i] * fencedK);
             this.rejoinLobe(flock, groups, i, base, x, y, blocked ? -1 : G.rejoinWeight);
             desiredSpeed = walkSpeed;
           }
@@ -269,7 +271,7 @@ export class Steering {
           let dx = cxm - x;
           let dy = cym - y;
           let d = Math.hypot(dx, dy);
-          let coh = R.cohesion * (1 + flock.fear[i]) * flock.gregarious[i] * Math.min(1, d / FL.centroidBendPacked);
+          let coh = R.cohesion * (1 + flock.fear[i]) * flock.gregarious[i] * Math.min(1, d / FL.centroidBendPacked) * fencedK;
           if (flock.lonely[i]) coh *= FL.lonelyCohesion;
           if (d > 0.5) { vx += (dx / d) * coh; vy += (dy / d) * coh; }
           // short-range repulsion
@@ -298,7 +300,7 @@ export class Steering {
           const al = Math.hypot(ax, ay);
           if (al > 1e-6) { vx += (ax / al) * R.align; vy += (ay / al) * R.align; }
           // a stray, or a group too small to stand alone, heads back to the rest
-          const un = blocked ? 0 : groups.seekRest[i];
+          const un = blocked ? 0 : groups.seekRest[i] * (flock.fenced[i] ? G.fencedPull : 1);
           if (un > 0.05) {
             const rx2 = groups.restX[i] - x;
             const ry2 = groups.restY[i] - y;
@@ -317,6 +319,17 @@ export class Steering {
             const al2 = Math.hypot(ax2, ay2);
             if (al2 > 1e-3) {
               const w = R.threatRepel * flock.pressure[i];
+              vx += (ax2 / al2) * w;
+              vy += (ay2 / al2) * w;
+            }
+          } else if (remembered && flock.fear[i] > 0.1) {
+            // Autosheep: once the threat stops pressing, a frightened sheep still keeps away
+            // from where it last saw it, instead of running straight back to the others
+            const ax2 = x - flock.seenX[i];
+            const ay2 = y - flock.seenY[i];
+            const al2 = Math.hypot(ax2, ay2);
+            if (al2 > 1e-3) {
+              const w = R.threatRepel * R.rememberedRepel * flock.fear[i];
               vx += (ax2 / al2) * w;
               vy += (ay2 / al2) * w;
             }
@@ -373,7 +386,7 @@ export class Steering {
               // Selfish herd: run to the middle first. Once there is no middle left to run to,
               // the bend has to fade or the packed flock mills on the spot instead of leaving.
               const packed = Math.min(1, cl / FL.centroidBendPacked);
-              const lam = FL.centroidBend * (1 + flock.fear[i]) * packed;
+              const lam = FL.centroidBend * (1 + flock.fear[i]) * packed * fencedK;
               ax += (cx2 / cl) * lam;
               ay += (cy2 / cl) * lam;
             }
@@ -468,7 +481,8 @@ export class Steering {
     // as long as it takes to work with, and heals if the flock is left in peace for minutes.
     // A negative weight means the way there is blocked.
     if (weight < 0 || dRest < 1e-3) return;
-    const w = weight * groups.seekRest[i] * flock.gregarious[i] + (divided ? G.driftTogether : 0);
+    let w = weight * groups.seekRest[i] * flock.gregarious[i] + (divided ? G.driftTogether : 0);
+    if (flock.fenced[i]) w *= G.fencedPull;
     if (w <= 0.02) return;
     this.lobe(flock.interest, base, dx / dRest, dy / dRest, w);
   }

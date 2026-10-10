@@ -19,7 +19,7 @@ export interface HudState {
   /** where the pen is, if it is off screen */
   penArrow: { x: number; y: number; angle: number } | null;
   floaters: { text: string; x: number; y: number; age: number }[];
-  cursor: { x: number; y: number; tool: 'idle' | 'press' | 'bucket' } | null;
+  cursor: { x: number; y: number; tool: 'idle' | 'bucket' } | null;
   won: { time: number; age: number } | null;
   megaphoneReady: number;
 }
@@ -48,7 +48,7 @@ export function drawHud(g: CanvasRenderingContext2D, f: Fonts, s: HudState): voi
   const helpAlpha = s.won ? 0 : s.showHelp ? 1 : Math.max(0, 1 - (s.playing - 45) / 2);
   if (helpAlpha > 0) {
     const items: [string, string][] = [
-      ['MOUSE', 'hover'], ['LMB', 'press'], ['RMB', 'feed'], ['SPACE', 'honk'],
+      ['MOUSE', 'fly'], ['HOLD CLICK', 'feed bucket'], ['SPACE', 'honk'],
       ['G', 'gate'], ['Q E', 'rotate'], ['WHEEL', 'zoom'], ['H', 'help'],
     ];
     let w = 0;
@@ -149,8 +149,8 @@ function won(g: CanvasRenderingContext2D, f: Fonts, time: number, age: number, t
   g.restore();
 }
 
-function cursor(g: CanvasRenderingContext2D, x: number, y: number, tool: 'idle' | 'press' | 'bucket'): void {
-  const c = tool === 'press' ? C.orange : tool === 'bucket' ? C.lime : C.white;
+function cursor(g: CanvasRenderingContext2D, x: number, y: number, tool: 'idle' | 'bucket'): void {
+  const c = tool === 'bucket' ? C.lime : C.white;
   const X = Math.round(x);
   const Y = Math.round(y);
   rect(g, X - 5, Y - 1, 11, 3, C.black);

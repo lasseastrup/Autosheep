@@ -67,6 +67,8 @@ export interface SimConfig {
     repelDist: number;
     align: number;
     threatRepel: number;
+    /** Autosheep: share of threatRepel kept, scaled by fear, for a threat seen but not pressing */
+    rememberedRepel: number;
     noise: number;
     noiseTau: number;
     staminaDrain: number;
@@ -163,6 +165,8 @@ export interface SimConfig {
     driftTogether: number;
     rejoinWeight: number;
     rejoinRunWeight: number;
+    /** Autosheep: how much of the pull toward the rest survives when a fence is in the way */
+    fencedPull: number;
     threatMemory: number;
   };
   fences: { dangerStart: number; dangerFull: number };
@@ -246,18 +250,21 @@ export function defaultConfig(): SimConfig {
       speed: 3.5,
       sprintSpeed: 6.0,
       isolationDist: 8,
-      isolationRate: 0.02,
+      // Autosheep: was 0.02; isolation was too aversive to work single sheep
+      isolationRate: 0.008,
       dispersalRef: 3.5,
       dispersalRatio: 2.0,
       dispersalRate: 0.004,
       mimetic: { tau: 4, a: 1.0, d: 2.0, g: 1.0, refractory: 1.5 },
       stop: { tau: 3, a: 2.5, d: 2.5, closeDist: 1.5, packedDist: 2.0, maxDuration: 6, stuckSpeed: 0.6, stuckTime: 1.5 },
-      cohesion: 1.05,
+      // Autosheep: was 1.05; running flocks packed so hard the flock felt magnetic
+      cohesion: 0.7,
       cohesionCentroidMix: 0.5,
       repel: 1.0,
       repelDist: 1.2,
       align: 0.3,
       threatRepel: 1.4,
+      rememberedRepel: 0.5,
       noise: 0.3,
       noiseTau: 1.5,
       staminaDrain: 0.35,
@@ -291,7 +298,8 @@ export function defaultConfig(): SimConfig {
       directnessGain: 0.5,
       blindFactor: 0.3,
       blindProximity: 2,
-      contagionGain: 0.9,
+      // Autosheep: was 0.9; panic spread to the whole flock before it reached the far side
+      contagionGain: 0.6,
       contagionThreshold: 0.35,
       contagionBypassFear: 0.5,
       alarmedThreshold: 0.4,
@@ -302,7 +310,8 @@ export function defaultConfig(): SimConfig {
       packedDist: 2,
       arousalGain: 0.6,
       arousalTau: 120,
-      lonelyFear: 0.3,
+      // Autosheep: was 0.3
+      lonelyFear: 0.2,
       habituationStrength: 0.45,
       habituationGainTau: 40,
       habituationLossTau: 5,
@@ -322,7 +331,8 @@ export function defaultConfig(): SimConfig {
     flee: {
       dangerWeight: 1.4,
       interestWeight: 1.2,
-      centroidBend: 0.8,
+      // Autosheep: was 0.8; fleeing sheep ran into the middle instead of away
+      centroidBend: 0.4,
       centroidBendPacked: 1.6,
       balanceInterest: 0.4,
       balanceDanger: 0.5,
@@ -335,7 +345,8 @@ export function defaultConfig(): SimConfig {
       blockedReach: 1.4,
       obstacleWeight: 1.2,
       lonelyDangerScale: 0.5,
-      lonelyCohesion: 2,
+      // Autosheep: was 2
+      lonelyCohesion: 1.3,
     },
     group: {
       linkDist: 6,
@@ -344,8 +355,10 @@ export function defaultConfig(): SimConfig {
       flockPull: 0.8,
       flockSpread: 1.0,
       driftTogether: 0.35,
-      rejoinWeight: 1.1,
-      rejoinRunWeight: 0.9,
+      // Autosheep: was 1.1 and 0.9
+      rejoinWeight: 0.9,
+      rejoinRunWeight: 0.7,
+      fencedPull: 0.15,
       threatMemory: 12,
     },
     fences: { dangerStart: 3, dangerFull: 0.5 },

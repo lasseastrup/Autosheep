@@ -12,7 +12,6 @@ import { BridgeSet } from './sets/bridge';
 import { ScannerSet } from './sets/scanner';
 import { CountrySet } from './sets/country';
 import { LawSet } from './sets/law';
-import { ErasSet } from './sets/eras';
 import { TitleSet } from './sets/title';
 
 const voiceUrls = import.meta.glob('../../assets/voice/*.mp3', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
@@ -54,7 +53,6 @@ export class IntroPlayer {
       scanner: new ScannerSet(this.ctx, country),
       country,
       law: new LawSet(this.ctx),
-      eras: new ErasSet(this.ctx),
       title: new TitleSet(this.ctx),
     };
   }

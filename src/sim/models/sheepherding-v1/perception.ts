@@ -141,7 +141,8 @@ export class Perception {
       }
 
       // lonely sheep are permanently uneasy
-      const lonely = flock.nearestDist[i] > cfg.run.isolationDist;
+      // Autosheep: a sheep fenced off from its flock can still see it, and is merely put out
+      const lonely = flock.nearestDist[i] > cfg.run.isolationDist && !flock.fenced[i];
       flock.lonely[i] = lonely ? 1 : 0;
       // Wanting to rejoin the flock is NOT fear: it makes a sheep walk, not freeze. Only real
       // isolation raises alarm. Keeping the two separate is what lets a scattered flock walk

@@ -7,11 +7,23 @@ import { PuffSystem, SparkSystem, skyDome, setSky } from '../../art/fx';
 import { tree, fence } from '../../art/props';
 import { toon } from '../../engine/toon';
 import { C } from '../../engine/palette';
-import { clamp, easeOutBack, easeOutCubic, hash1, lerp } from '../../engine/rng';
-import { mesh } from '../../art/geo';
+import { Rng, clamp, easeOutBack, easeOutCubic, hash1, lerp } from '../../engine/rng';
+import { mesh, blob } from '../../art/geo';
 import { offscreen, rect } from '../../engine/ui';
-import { slab } from './eras';
 import { starfield } from '../../art/earth';
+
+/** A floating diorama slab: grass top with a lip, layered earth sides. */
+export function slab(w: number, d: number, top: string, seed = 1): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(w, 0.3, d), toon(top), [0, -0.15, 0]));
+  g.add(mesh(new THREE.BoxGeometry(w - 0.1, 1.2, d - 0.1), toon(C.terracotta), [0, -0.9, 0]));
+  g.add(mesh(new THREE.BoxGeometry(w - 0.4, 1.6, d - 0.4), toon(C.rust), [0, -2.2, 0]));
+  g.add(mesh(new THREE.BoxGeometry(w - 1.4, 1.4, d - 1.4), toon(C.wine), [0, -3.6, 0]));
+  const r = new Rng(seed);
+  // dangling rocks underneath
+  for (let i = 0; i < Math.floor(w / 2); i++) g.add(mesh(blob(r.range(0.3, 0.7), 1, 0.2, seed + i), toon(C.clay, { flat: true }), [r.range(-w / 2 + 1, w / 2 - 1), r.range(-4.6, -3.8), r.range(-d / 2 + 1, d / 2 - 1)]));
+  return g;
+}
 
 /** The title: a little floating meadow, the general, his flock, and the logo. */
 export class TitleSet implements StageSet {

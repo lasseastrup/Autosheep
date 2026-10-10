@@ -96,6 +96,8 @@ export class Flock {
   readonly lureY: Float32Array;
   /** group id published to the contract */
   readonly group: Int32Array;
+  /** 1 when a fence stands between my group and the rest of the flock */
+  readonly fenced: Uint8Array;
 
   // context maps (scratch, slots per sheep)
   readonly interest: Float32Array;
@@ -140,6 +142,7 @@ export class Flock {
     this.seenX = f(); this.seenY = f(); this.seenUntil = f();
     this.lure = f(); this.lureX = f(); this.lureY = f();
     this.group = new Int32Array(capacity);
+    this.fenced = new Uint8Array(capacity);
     this.interest = new Float32Array(capacity * slots);
     this.danger = new Float32Array(capacity * slots);
   }

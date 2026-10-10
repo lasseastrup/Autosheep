@@ -162,11 +162,11 @@ export class Behaviour {
       if (st !== SheepState.Run) {
         let rr = 0;
         const nd = flock.nearestDist[i];
-        if (nd < 1e5) rr += R.isolationRate * Math.max(0, nd - R.isolationDist);
+        if (nd < 1e5 && !flock.fenced[i]) rr += R.isolationRate * Math.max(0, nd - R.isolationDist);
         // peripheral sheep: further from their visible neighbours than the flock's own spacing
         const mv = flock.meanVisDist[i];
         const dispRef = Math.max(R.dispersalRef, R.dispersalRatio * flock.meanNnd);
-        if (mv < 1e5) {
+        if (mv < 1e5 && !flock.fenced[i]) {
           const ex = Math.max(0, mv - dispRef);
           rr += R.dispersalRate * ex * ex;
         }

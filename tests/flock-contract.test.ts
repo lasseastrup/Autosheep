@@ -9,6 +9,14 @@ import { BoidsModel } from '../src/sim/models/boids';
 import { SheepherdingV1 } from '../src/sim/models/sheepherding-v1';
 import { centroid, cluster, countIn, meanDistTo, pen, run, ScriptedDriver, stateFraction } from '../src/sim/scenarios';
 
+/** mean distance of the sheep from the flock's centre */
+function spread(m: FlockModel): number {
+  const c = centroid(m);
+  let s = 0;
+  for (let i = 0; i < m.out.count; i++) s += Math.hypot(m.out.x[i] - c.x, m.out.y[i] - c.y);
+  return s / m.out.count;
+}
+
 const MODELS: { name: string; make: () => FlockModel; full: boolean }[] = [
   { name: 'sheepherding-v1', make: () => new SheepherdingV1(), full: true },
   { name: 'boids', make: () => new BoidsModel(), full: false },
@@ -119,6 +127,46 @@ describe.each(MODELS)('$name', ({ make, full }) => {
     }
     expect(windows[0]).toBeGreaterThan(0.2);
     expect(windows[7]).toBeLessThan(windows[0] * 0.5);
+  });
+
+  test.runIf(full).each([1, 2, 3, 4])('a lone sheep fenced off from its flock can be walked out (seed %i)', (seed) => {
+    // a fence across the field with one gap at the far west end; the flock is south-east of it
+    // and one sheep is north of it, so the way out leads away from the others
+    const m = make();
+    m.init({ seed, width: 60, height: 60, sheep: [{ x: 40, y: 26 }, ...cluster(29, 45, 42, seed)] });
+    const fences: Obstacle[] = [
+      { ax: 9, ay: 30, bx: 60, by: 30, radius: 0.08, solid: false },
+      { ax: 0, ay: 30, bx: 4, by: 30, radius: 0.08, solid: false },
+    ];
+    m.setObstacles(fences);
+    run(m, 5, () => []);
+    // left alone it does not throw itself at the fence
+    expect(m.out.state[0]).not.toBe(SheepState.Run);
+    const driver = new ScriptedDriver(52, 22, 6.5, 33, fences);
+    let out = false;
+    for (let k = 0; k < 120 / m.dt && !out; k++) {
+      driver.update(m, m.dt, (i) => i !== 0);
+      m.step([{ id: 1, kind: 'threat', x: driver.x, y: driver.y, strength: 1, radius: 10 }]);
+      out = m.out.y[0] > 31;
+    }
+    expect(out).toBe(true);
+  });
+
+  test.runIf(full)('walking up to a flock does not crush it into a ball', () => {
+    const ratios = [1, 2, 3, 4, 5, 6].map((seed) => {
+      const m = make();
+      m.init({ seed, width: 80, height: 80, sheep: cluster(30, 40, 40, seed, 1.8) });
+      run(m, 10, () => []);
+      const before = spread(m);
+      let x = 22;
+      run(m, 14, () => {
+        x = Math.min(33, x + m.dt);
+        return [{ id: 1, kind: 'threat', x, y: 40, strength: 1, radius: 10 }];
+      });
+      return spread(m) / before;
+    });
+    // the flock bunches, as flocks under pressure do, but keeps most of its spread
+    expect(ratios.reduce((a, b) => a + b) / ratios.length).toBeGreaterThan(0.66);
   });
 
   test.runIf(full)('a startle carries past a hurdle but not a stone wall', () => {

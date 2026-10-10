@@ -58,18 +58,14 @@ async function boot(): Promise<void> {
   // a title-ish start screen: audio needs a user gesture
   const startAt = +(params.get('t') ?? 0);
   let started = false;
-  // the start screen is the title diorama, idling, with a prompt over it
+  // the start screen is the title diorama, idling, with two buttons over it
   const title = player.tl.shots.find((s) => s.name === 'title')!;
   const prompt = (now: number) => (g: CanvasRenderingContext2D) => {
     const f = player.fonts;
-    g.fillStyle = C.black;
-    g.fillRect(118, 210, 244, 48);
-    g.fillStyle = C.straw;
-    g.fillRect(118, 210, 244, 1);
-    g.fillRect(118, 257, 244, 1);
-    if (Math.floor(now * 2) % 2 === 0) f.body.draw(g, 'CLICK OR PRESS ANY KEY', 240, 215, { color: C.straw, align: 'center' });
-    f.tiny.draw(g, 'TO PLAY THE INTRO  -  SOUND ON  -  ESC SKIPS  -  S SUBTITLES', 240, 235, { color: C.fog, align: 'center' });
-    f.tiny.draw(g, 'OR PRESS G TO SKIP STRAIGHT TO THE HERDING', 240, 245, { color: C.lime, align: 'center' });
+    const hover = pointerAt ? hit(pointerAt.x, pointerAt.y) : null;
+    button(g, f, WATCH, 'WATCH THE INTRO', 'ENTER', hover === WATCH || (hover === null && Math.floor(now * 2) % 2 === 0), C.straw);
+    button(g, f, SKIP, 'SKIP TO THE GAME', 'ESC', hover === SKIP, C.lime);
+    f.tiny.draw(g, 'SOUND ON  -  THE INTRO IS 3 MINUTES  -  ESC SKIPS IT AT ANY TIME', 240, 248, { color: C.fog, align: 'center' });
   };
   const drawStart = (now: number) => {
     player.overlayHook = prompt(now);
@@ -87,62 +83,106 @@ async function boot(): Promise<void> {
 
   const start = async (e: Event) => {
     if (started) return;
+    let skip = false;
+    // Esc, G or the skip button go to the game; any other key or click plays the intro
+    if (e instanceof KeyboardEvent) {
+      const k = e.key.toLowerCase();
+      if (['shift', 'control', 'alt', 'meta', 'tab'].includes(k)) return;
+      skip = k === 'escape' || k === 'g';
+    } else if (e instanceof PointerEvent) {
+      const p = toIntro(e);
+      skip = hit(p.x, p.y) === SKIP;
+    }
     started = true;
     player.overlayHook = null;
     const ctx = new AudioContext({ latencyHint: 'interactive' });
     await ctx.resume();
-    if (e instanceof KeyboardEvent && e.key.toLowerCase() === 'g') {
+    if (skip) {
       startGame(player.fonts, ctx);
       return;
     }
     const audio = await player.prepareAudio(ctx);
     run(audio, startAt, ctx);
   };
-  window.addEventListener('pointerdown', start, { once: false });
-  window.addEventListener('keydown', start, { once: false });
+  window.addEventListener('pointermove', (e) => (pointerAt = toIntro(e)));
+  window.addEventListener('pointerdown', start);
+  window.addEventListener('keydown', start);
+}
+
+/** Buttons on the 480×270 intro screen. */
+interface Box { x: number; y: number; w: number; h: number }
+const WATCH: Box = { x: 112, y: 212, w: 124, h: 26 };
+const SKIP: Box = { x: 244, y: 212, w: 124, h: 26 };
+const SKIP_CORNER: Box = { x: 404, y: 6, w: 70, h: 14 };
+let pointerAt: { x: number; y: number } | null = null;
+
+function toIntro(e: PointerEvent): { x: number; y: number } {
+  const r = player.pr.renderer.domElement.getBoundingClientRect();
+  return { x: ((e.clientX - r.left) / r.width) * 480, y: ((e.clientY - r.top) / r.height) * 270 };
+}
+
+function hit(x: number, y: number, boxes: Box[] = [WATCH, SKIP]): Box | null {
+  return boxes.find((b) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) ?? null;
+}
+
+function button(g: CanvasRenderingContext2D, f: Fonts, b: Box, label: string, key: string, lit: boolean, color: string): void {
+  g.fillStyle = C.black;
+  g.fillRect(b.x, b.y, b.w, b.h);
+  g.fillStyle = lit ? color : C.lilac;
+  g.fillRect(b.x, b.y, b.w, 1);
+  g.fillRect(b.x, b.y + b.h - 1, b.w, 1);
+  g.fillRect(b.x, b.y, 1, b.h);
+  g.fillRect(b.x + b.w - 1, b.y, 1, b.h);
+  f.small.draw(g, label, b.x + b.w / 2, b.y + 6, { color: lit ? color : C.mist, align: 'center' });
+  f.tiny.draw(g, key, b.x + b.w / 2, b.y + 16, { color: C.fog, align: 'center' });
 }
 
 function run(audio: AudioEngine, offset: number, ctx: AudioContext): void {
   const dur = player.tl.duration;
   audio.startRealtime(offset);
-  let skipped = false;
   let leaving = false;
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 's' || e.key === 'S') player.subtitles = !player.subtitles;
-    if (e.key === 'Escape' && !skipped) {
-      skipped = true;
-      audio.stop();
-      const title = player.tl.shots.find((s) => s.name === 'title')!;
-      audio.startRealtime(title.start);
-    }
-  };
-  window.addEventListener('keydown', onKey);
-  hint.textContent = 'ESC skip · S subtitles';
   const toGame = () => {
     if (leaving) return;
     leaving = true;
     audio.stop();
     window.removeEventListener('keydown', onKey);
+    window.removeEventListener('pointerdown', onPointer);
     startGame(player.fonts, ctx);
+  };
+  // Esc, or the corner button, skips straight to the game; once the film is over, any key
+  // or click does
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 's' || e.key === 'S') {
+      player.subtitles = !player.subtitles;
+      return;
+    }
+    if (e.key === 'Escape' || audio.now() >= dur) toGame();
+  };
+  const onPointer = (e: PointerEvent) => {
+    const p = toIntro(e);
+    if (audio.now() >= dur || hit(p.x, p.y, [SKIP_CORNER])) toGame();
+  };
+  window.addEventListener('keydown', onKey);
+  window.addEventListener('pointerdown', onPointer);
+  hint.textContent = 'ESC skip intro · S subtitles';
+  const skipButton = (g: CanvasRenderingContext2D) => {
+    const f = player.fonts;
+    const b = SKIP_CORNER;
+    const lit = !!pointerAt && !!hit(pointerAt.x, pointerAt.y, [b]);
+    g.fillStyle = C.black;
+    g.fillRect(b.x, b.y, b.w, b.h);
+    g.fillStyle = lit ? C.lime : C.mauve;
+    g.fillRect(b.x, b.y + b.h - 1, b.w, 1);
+    f.small.draw(g, 'SKIP  ESC', b.x + b.w / 2, b.y + 3, { color: lit ? C.lime : C.fog, align: 'center' });
   };
   const tick = () => {
     if (leaving) return;
     const T = Math.min(audio.now(), dur - 0.001);
     const ended = audio.now() >= dur;
-    player.overlayHook = ended ? endPrompt(audio.now() - dur) : null;
+    player.overlayHook = ended ? endPrompt(audio.now() - dur) : skipButton;
     player.frame(Math.max(0, T));
     requestAnimationFrame(tick);
   };
-  // once the film is over, any key or click starts the game
-  const waitEnd = (e: Event) => {
-    if (audio.now() < dur) return;
-    if (e instanceof KeyboardEvent && (e.key === 's' || e.key === 'S')) return;
-    window.removeEventListener('keydown', waitEnd);
-    window.removeEventListener('pointerdown', waitEnd);
-    toGame();
-  };
-  window.addEventListener('keydown', waitEnd);
-  window.addEventListener('pointerdown', waitEnd);
   requestAnimationFrame(tick);
 }
 
@@ -221,14 +261,13 @@ function wireInput(game: Game, el: HTMLCanvasElement): void {
     inp.pointer = x >= 0 && x <= GW && y >= 0 && y <= GH ? { x, y } : null;
   };
   window.addEventListener('pointermove', toOverlay);
+  // holding either mouse button rattles the feed bucket
   window.addEventListener('pointerdown', (e) => {
     toOverlay(e);
-    if (e.button === 0) inp.press = true;
-    if (e.button === 2) inp.bucket = true;
+    inp.bucket = (e.buttons & 3) !== 0;
   });
   window.addEventListener('pointerup', (e) => {
-    if (e.button === 0) inp.press = false;
-    if (e.button === 2) inp.bucket = false;
+    inp.bucket = (e.buttons & 3) !== 0;
   });
   window.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
@@ -244,7 +283,6 @@ function wireInput(game: Game, el: HTMLCanvasElement): void {
   }, { passive: false });
   window.addEventListener('blur', () => {
     inp.keys.clear();
-    inp.press = false;
     inp.bucket = false;
   });
 }

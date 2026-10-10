@@ -6,7 +6,7 @@ sheep be more advanced than the humans were. General Gafoop has been exiled to E
 Instead of conveyor belts, you build fences, gates, races and machines that herd sheep
 through a civilisation, from the Stone Age to the Industrial Age.
 
-**Status:** M1. A 3½-minute intro cutscene, then the first playable level: herd 30 sheep across a
+**Status:** M1. A 3-minute intro cutscene (the backstory), then the first playable level: herd 30 sheep across a
 meadow and into a pen. The flock runs behind a model-independent contract with behaviour tests.
 The game design is in [`docs/DESIGN.md`](docs/DESIGN.md).
 
@@ -18,15 +18,16 @@ npm run dev          # http://127.0.0.1:5173 — click to play the intro (sound 
 npm test             # flock behaviour tests
 ```
 
-In the intro: `Esc` skips to the title, `S` toggles subtitles, `G` on the start screen skips
-straight to the game. Development query flags: `?game` opens the game directly, `?t=95` starts
+The start screen offers the intro or the game; during the intro `Esc` (or the corner button)
+skips straight to the game and `S` toggles subtitles. Development query flags: `?game` opens the game directly, `?t=95` starts
 the intro at 95 s, `?nosubs` hides subtitles, `?scale=3` forces the upscale factor.
 
-**Playing.** Gafoop hovers after the mouse. Hold the left button to press the sheep with his
-crook, hold the right button to rattle a feed bucket (sheep follow it), `Space` honks the
-megaphone (everything nearby bolts), `G` opens and shuts the pen gate, `Q`/`E` rotate the view,
-the wheel zooms and `WASD` pans. Pen all 30 sheep and shut the gate to pass the audit. Sheep
-moved too hard jam in the gateway; ease off, or bring the bucket.
+**Playing.** Gafoop hovers after the mouse, and sheep keep away from him by proximity alone:
+come in slowly to walk them, fast to make them run. Hold a mouse button to rattle a feed bucket
+(sheep follow it and forgive him being close), `Space` honks the megaphone (everything nearby
+bolts), `G` opens and shuts the pen gate, `Q`/`E` rotate the view, the wheel zooms and `WASD`
+pans. Pen all 30 sheep and shut the gate to pass the audit. Sheep moved too hard jam in the
+gateway; ease off, or bring the bucket.
 
 | Command | What it does |
 |---|---|
@@ -79,11 +80,14 @@ speed, state, fear and group out. The model is still changing, so it is replacea
 
 - `models/sheepherding-v1` is the [sheepherding](https://github.com/lasseastrup/sheepherding)
   sim (commit a470408), copied in and extended with several stimuli at once, lures, startles and
-  fences (ray-cast steering and side-preserving collision). Changes are marked "Autosheep".
+  fences (ray-cast steering and side-preserving collision). Groups are fence-aware, so a sheep
+  fenced off from its flock stops pining for it, and the flock is retuned to be less magnetic
+  (weaker running cohesion, flee bend and isolation panic). Changes are marked "Autosheep".
 - `models/boids` is a deliberately simple second model that keeps the contract honest.
 
 `tests/flock-contract.test.ts` holds the behaviour guarantees from DESIGN.md §4.1 (flee, follow,
-containment, startle, determinism, penning through a gate, habituation, walls blocking sight).
+containment, startle, determinism, penning through a gate, habituation, walls blocking sight,
+working a fenced-off straggler, and pressure not crushing the flock).
 See also [`docs/research/sheepherding-repo-analysis.md`](docs/research/sheepherding-repo-analysis.md).
 
 ## Credits

@@ -336,21 +336,7 @@ export function buildTimeline(): Timeline {
     s.say('N09', 1.4);
     s.fadeOut(0.6);
   }, 0);
-  // 8 ── the plan: the ages ────────────────────────────────────────────────
-  shot('eras', 'eras', (s) => {
-    s.fadeIn(0.5);
-    s.wait(0.6).say('N10', 0.45);
-    s.word('N10', 'Stone', 'stone', 'start').word('N10', 'Bronze', 'bronze', 'start').word('N10', 'Iron', 'iron', 'start').word('N10', 'Industrial', 'industrial', 'start');
-    s.word('N10', 'fences', 'fences', 'start').word('N10', 'gates', 'gates', 'start').word('N10', 'dogs', 'dogs', 'start').word('N10', 'automation', 'automation', 'start');
-    s.sfx(sfx.gong, s.marks.bronze, { vol: 0.9 }).sfx(sfx.anvil, s.marks.iron).sfx(sfx.steam, s.marks.industrial, { dur: 1.4 });
-    for (const k of ['fences', 'gates', 'dogs']) s.sfx(sfx.pop, s.marks[k], { pitch: 1.2 });
-    s.sfx(sfx.sparkle, s.marks.automation + 0.2);
-    s.say('G09', 0.4);
-    s.mark('jam').sfx(sfx.thud, s.cursor, { vol: 0.5 }).sfx(sfx.bleat, s.cursor + 0.2, { pitch: 1.2, len: 0.5, vol: 0.7 }).wait(1.5);
-    s.score('eras', 0, 'end', { 2: 'bronze', 3: 'iron', 4: 'iron', 5: 'industrial', 6: 'industrial' });
-  });
-
-  // 9 ── title ──────────────────────────────────────────────────────────────
+  // 8 ── title ──────────────────────────────────────────────────────────────
   shot('title', 'title', (s) => {
     s.whiteIn(0.35);
     s.score('title');

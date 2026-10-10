@@ -1,5 +1,6 @@
 import type { Flock } from './flock';
 import type { UniformGrid } from './grid';
+import type { Obstacles } from './obstacles';
 
 /**
  * Connected sub-groups of the flock, by union-find over pairs closer than `linkDist`.
@@ -70,7 +71,8 @@ export class Groups {
    * @param shedTolerance  group size at which a group stands on its own and stops seeking the rest
    * @param strayDist      how far from the flock a small group must be before it walks back
    */
-  update(flock: Flock, grid: UniformGrid, linkDist: number, shedTolerance: number, strayDist: number): void {
+  update(flock: Flock, grid: UniformGrid, linkDist: number, shedTolerance: number, strayDist: number, obstacles?: Obstacles): void {
+    const fences = obstacles && obstacles.count > 0 ? obstacles : null;
     const n = flock.count;
     let fx = 0;
     let fy = 0;
@@ -98,7 +100,8 @@ export class Groups {
             if (j <= i) continue;
             const dx = flock.px[i] - flock.px[j];
             const dy = flock.py[i] - flock.py[j];
-            if (dx * dx + dy * dy <= link2) this.union(i, j);
+            // Autosheep: sheep on either side of a fence are not one group
+            if (dx * dx + dy * dy <= link2 && !(fences && fences.crossesNear(flock.px[i], flock.py[i], flock.px[j], flock.py[j]))) this.union(i, j);
           }
         }
       }
@@ -117,6 +120,27 @@ export class Groups {
     // ordinary flock sizes this leaves shedTolerance as written.
     const tol = Math.max(shedTolerance, n / 4);
     const span = Math.max(1, tol - 1);
+    // Autosheep: a group whose way to the rest of the flock is fenced off knows it cannot get
+    // there, and stops pining for it. Checked once per group, centre to centre.
+    if (fences) {
+      for (let i = 0; i < n; i++) {
+        const r = this.groupOf[i];
+        if (r !== i) continue;
+        const gs = this.size[r];
+        const others = n - gs;
+        let f = 0;
+        if (others > 0) {
+          const rx = (fx - this.sumX[r]) / others;
+          const ry = (fy - this.sumY[r]) / others;
+          f = fences.crossesAny(this.sumX[r] / gs, this.sumY[r] / gs, rx, ry) ? 1 : 0;
+        }
+        flock.fenced[r] = f;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const r = this.groupOf[i];
+      flock.fenced[i] = fences ? flock.fenced[r] : 0;
+    }
     for (let i = 0; i < n; i++) {
       const r = this.groupOf[i];
       if (r === i) count++;
@@ -135,7 +159,7 @@ export class Groups {
       const seek = Math.min(1, Math.max(0, (tol - gs) / span));
       this.seekRest[i] = seek;
       const stray = Math.hypot(flock.px[i] - this.restX[i], flock.py[i] - this.restY[i]) > strayDist;
-      this.mustRejoin[i] = seek > 0.5 && stray ? 1 : 0;
+      this.mustRejoin[i] = seek > 0.5 && stray && !flock.fenced[i] ? 1 : 0;
     }
     this.groupCount = count;
   }

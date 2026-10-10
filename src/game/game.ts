@@ -13,8 +13,13 @@ import { GameAudio } from './gameAudio';
 import { drawHud, H, W, type HudState } from './hud';
 import { allObstacles, buildScenery, FLOCK_AT, GAFOOP_AT, GATE, GateMesh, levelObstacles, PEN, WORLD, type LevelObstacles } from './level';
 
-const PRESS = { strength: 1.0, radius: 10 };
-const PRESENCE = { strength: 0.35, radius: 7 };
+/**
+ * Gafoop is always a threat, and only his proximity (and how fast he closes in) decides how
+ * much: there is no button for scaring. While he rattles the bucket he is mostly forgiven.
+ * A later unlock could let him fly in stealth, counting for nothing at all.
+ */
+const PRESENCE = { strength: 0.85, radius: 9 };
+const WITH_BUCKET = { strength: 0.25, radius: 6 };
 const BUCKET = { strength: 1.0, radius: 14 };
 const HONK = { strength: 1.6, radius: 14, cooldown: 4 };
 
@@ -33,7 +38,7 @@ const QUIPS = {
 export interface GameInput {
   /** pointer in overlay pixels, or null when off the canvas */
   pointer: { x: number; y: number } | null;
-  press: boolean;
+  /** a mouse button is held: rattle the feed bucket */
   bucket: boolean;
   keys: Set<string>;
   /** keys pressed since the last frame */
@@ -77,7 +82,7 @@ export class Game {
   private lastScatterQuip = -99;
   private quipIndex = 0;
   audio: GameAudio | null = null;
-  readonly input: GameInput = { pointer: null, press: false, bucket: false, keys: new Set(), hits: [], wheel: 0 };
+  readonly input: GameInput = { pointer: null, bucket: false, keys: new Set(), hits: [], wheel: 0 };
   /** called once a frame has been drawn (for tooling) */
   onFrame: (() => void) | null = null;
 
@@ -109,7 +114,7 @@ export class Game {
   reset(n: number): void {
     this.flockSize = n;
     if (this.flock) this.scene.remove(this.flock.root);
-    if (this.gafoop) this.scene.remove(this.gafoop.root, ...this.gafoop.rings);
+    if (this.gafoop) this.scene.remove(this.gafoop.root, ...this.gafoop.effects);
     this.model = new SheepherdingV1();
     this.model.init({ seed: this.attempt, width: WORLD.width, height: WORLD.height, sheep: cluster(n, FLOCK_AT.x, FLOCK_AT.y, this.attempt, 1.3) });
     this.gateClosed = false;
@@ -117,8 +122,8 @@ export class Game {
     this.syncObstacles();
     this.flock = new FlockView(n, this.attempt);
     this.scene.add(this.flock.root);
-    this.gafoop = new GafoopActor(GAFOOP_AT.x, GAFOOP_AT.y, PRESS.radius * 0.6, BUCKET.radius * 0.75);
-    this.scene.add(this.gafoop.root, ...this.gafoop.rings);
+    this.gafoop = new GafoopActor(GAFOOP_AT.x, GAFOOP_AT.y);
+    this.scene.add(this.gafoop.root, ...this.gafoop.effects);
     this.cam.jump(new THREE.Vector3((GAFOOP_AT.x + FLOCK_AT.x) / 2 + 4, 0, FLOCK_AT.y));
     this.penned = new Uint8Array(n);
     this.everPenned = new Uint8Array(n);
@@ -166,8 +171,8 @@ export class Game {
     const g = this.gafoop;
     const p = g.pos;
     const out: Stimulus[] = [];
-    const t = g.tool === 'press' ? PRESS : PRESENCE;
-    out.push({ id: 1, kind: 'threat', x: p.x, y: p.z, strength: g.tool === 'bucket' ? 0.12 : t.strength, radius: t.radius });
+    const t = g.tool === 'bucket' ? WITH_BUCKET : PRESENCE;
+    out.push({ id: 1, kind: 'threat', x: p.x, y: p.z, strength: t.strength, radius: t.radius });
     if (g.tool === 'bucket') out.push({ id: 2, kind: 'lure', x: p.x, y: p.z, strength: BUCKET.strength, radius: BUCKET.radius });
     if (this.pendingHonk) {
       out.push({ id: 3, kind: 'startle', x: p.x, y: p.z, strength: HONK.strength, radius: HONK.radius });
@@ -203,13 +208,13 @@ export class Game {
       target = this.cam.pick((inp.pointer.x / W) * 2 - 1, -((inp.pointer.y / H) * 2 - 1));
     }
     const g = this.gafoop;
-    g.tool = !this.started ? 'idle' : inp.bucket ? 'bucket' : inp.press ? 'press' : 'idle';
+    g.tool = this.started && inp.bucket ? 'bucket' : 'idle';
     if (g.tool === 'bucket') {
       this.audio?.rattle();
       this.quip('bucket');
     }
     g.update(target, dt, this.time, { w: WORLD.width, h: WORLD.height });
-    if (this.started) this.cam.follow(this.framing());
+    if (this.started) this.cam.follow(this.framing(), 0.16);
 
     // fixed-step simulation
     if (this.started) {
@@ -258,8 +263,8 @@ export class Game {
     const out = p.clone();
     if (n > 0) {
       const toward = new THREE.Vector3(x / n, 0, z / n).sub(p);
-      if (toward.length() > 9) toward.setLength(9);
-      out.addScaledVector(toward, 0.6);
+      if (toward.length() > 12) toward.setLength(12);
+      out.addScaledVector(toward, 0.75);
     }
     // near the pen, bring it into the picture too
     const pen = new THREE.Vector3((PEN.x0 + PEN.x1) / 2, 0, (PEN.y0 + PEN.y1) / 2);

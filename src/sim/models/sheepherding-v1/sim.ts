@@ -125,7 +125,7 @@ export class Sim {
     const dt = this.cfg.dt;
     this.grid.build(f.px, f.py, f.count);
     computeNeighbours(f, this.grid, this.cfg);
-    this.groups.update(f, this.grid, this.cfg.group.linkDist, this.cfg.group.shedTolerance, this.cfg.group.strayDist);
+    this.groups.update(f, this.grid, this.cfg.group.linkDist, this.cfg.group.shedTolerance, this.cfg.group.strayDist, this.obstacles);
     this.perception.update(f, this.threats, this.startles, this.lures, this.obstacles, this.time, dt);
     if (this.cfg.behaviourEnabled) this.behaviour.update(f, this.time, dt, this.groups);
     this.steering.update(f, this.threats, dt, this.groups, this.obstacles, this.time);

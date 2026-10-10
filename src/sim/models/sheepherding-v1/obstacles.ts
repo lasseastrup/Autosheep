@@ -95,6 +95,27 @@ export class Obstacles {
   }
 
   /**
+   * Does any fence cut the short line from (x0, y0) to (x1, y1)? Only valid for lines shorter
+   * than the grid's reach, since it looks up the cell at the midpoint.
+   */
+  crossesNear(x0: number, y0: number, x1: number, y1: number): boolean {
+    const near = this.near((x0 + x1) / 2, (y0 + y1) / 2);
+    for (let q = 0; q < near.length; q++) {
+      const k = near[q];
+      if (segmentsCross(x0, y0, x1, y1, this.ax[k], this.ay[k], this.bx[k], this.by[k])) return true;
+    }
+    return false;
+  }
+
+  /** Does any fence cut the line from (x0, y0) to (x1, y1), however long? */
+  crossesAny(x0: number, y0: number, x1: number, y1: number): boolean {
+    for (let k = 0; k < this.count; k++) {
+      if (segmentsCross(x0, y0, x1, y1, this.ax[k], this.ay[k], this.bx[k], this.by[k])) return true;
+    }
+    return false;
+  }
+
+  /**
    * Is the straight line from (x0, y0) to (x1, y1) cut by a solid segment? Used for line of
    * sight: sheep cannot see a threat or each other through a stone wall.
    */

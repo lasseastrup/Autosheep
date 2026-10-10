@@ -6,7 +6,7 @@ import { bucket } from '../art/props';
 import { C } from '../engine/palette';
 import { glow, noOutline, toon } from '../engine/toon';
 
-export type Tool = 'idle' | 'press' | 'bucket';
+export type Tool = 'idle' | 'bucket';
 
 /** A dashed ring of the given radius lying on the grass, drawn without outlines. */
 function ring(color: string, radius: number, width = 0.16, dashes = 40): THREE.Mesh {
@@ -24,8 +24,9 @@ function ring(color: string, radius: number, width = 0.16, dashes = 40): THREE.M
 }
 
 /**
- * General Gafoop on his hover-disc, steered by the cursor. He carries a crook (press: hold the
- * left button), a feed bucket (lure: hold the right) and a megaphone (startle: space).
+ * General Gafoop on his hover-disc, steered by the cursor. Sheep keep away from him by
+ * proximity alone; nothing he holds changes that. He also carries a feed bucket (lure: hold a
+ * mouse button) and a megaphone (startle: space).
  */
 export class GafoopActor {
   readonly root = new THREE.Group();
@@ -35,8 +36,6 @@ export class GafoopActor {
   readonly vel = new THREE.Vector3();
   private readonly crook = new THREE.Group();
   private readonly pail: THREE.Group;
-  private readonly zone: THREE.Mesh;
-  private readonly lure: THREE.Mesh;
   private readonly wave = ring(C.white, 1, 0.08, 48);
   maxSpeed = 6;
   tool: Tool = 'idle';
@@ -47,9 +46,7 @@ export class GafoopActor {
   lineFrom = 0;
   lineUntil = 0;
 
-  constructor(x: number, z: number, zoneRadius: number, lureRadius: number) {
-    this.zone = ring(C.orange, zoneRadius);
-    this.lure = ring(C.lime, lureRadius);
+  constructor(x: number, z: number) {
     this.pos.set(x, 0, z);
     this.hover.add(mesh(new THREE.CylinderGeometry(0.9, 0.7, 0.2, 18), toon(C.mist)));
     this.hover.add(mesh(new THREE.TorusGeometry(0.88, 0.05, 4, 24), toon(C.fog), [0, 0.02, 0], [Math.PI / 2, 0, 0]));
@@ -74,9 +71,9 @@ export class GafoopActor {
     });
   }
 
-  /** Rings live in world space, not on the bobbing disc. */
-  get rings(): THREE.Object3D[] {
-    return [this.zone, this.lure, this.wave];
+  /** Effects that live in world space, not on the bobbing disc. */
+  get effects(): THREE.Object3D[] {
+    return [this.wave];
   }
 
   megaphone(time: number): void {
@@ -119,27 +116,21 @@ export class GafoopActor {
     this.hover.rotation.x = fwd * 0.18;
 
     const g = this.gafoop;
-    const pressing = this.tool === 'press';
     const luring = this.tool === 'bucket';
     this.pail.visible = luring;
-    g.armL.swing = pressing ? 1.0 + Math.sin(time * 14) * 0.35 : 0.2;
-    g.armL.wave = pressing ? 0.25 : 0.05;
+    // the crook swings a little as he flies
+    g.armL.swing = 0.2 + fwd * 0.5 + Math.sin(time * 5) * 0.1 * fwd;
+    g.armL.wave = 0.05 + fwd * 0.1;
     g.armL.wavePhase = time * 6;
     g.armR.swing = luring ? -0.2 + Math.sin(time * 18) * 0.25 : -0.3;
     g.armR.wave = luring ? 0.2 : 0.05;
     g.armR.wavePhase = time * 5;
-    g.mouth = pressing ? 0.6 + Math.sin(time * 9) * 0.3 : this.lineUntil > time && time >= this.lineFrom ? 0.35 + Math.sin(time * 16) * 0.3 : 0.05;
-    g.squash = pressing ? Math.sin(time * 14) * 0.05 : 0;
+    g.mouth = this.lineUntil > time && time >= this.lineFrom ? 0.35 + Math.sin(time * 16) * 0.3 : 0.05;
+    g.squash = luring ? Math.sin(time * 18) * 0.03 : 0;
     g.blink = (time % 3.7) < 0.12 ? 1 : 0;
     g.update(time);
 
-    // the reach of what he is doing, drawn on the grass
-    this.zone.visible = pressing;
-    this.zone.position.set(this.pos.x, 0.04, this.pos.z);
-    this.zone.rotation.z = time * 0.6;
-    this.lure.visible = luring;
-    this.lure.position.set(this.pos.x, 0.04, this.pos.z);
-    this.lure.rotation.z = -time * 0.4;
+    // the honk's shock wave
     const w = (time - this.waveAt) / 0.7;
     this.wave.visible = w >= 0 && w < 1;
     if (this.wave.visible) {

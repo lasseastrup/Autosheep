@@ -97,9 +97,10 @@ never notice.
    they are.
 7. Gafoop crash-lands in a meadow, gives a rousing speech, a sheep sneezes, and the flock
    scatters. *Sheep, however, are sheep.*
-8. The plan: drag a planet of sheep from the Stone Age through Bronze and Iron to the Industrial
-   Age, using fences, gates, dogs (there being none left, he will have to build them) and a great
-   deal of automation.
+
+The intro tells only the backstory and ends there. The plan is the game itself: drag a planet
+of sheep from the Stone Age through Bronze and Iron to the Industrial Age, using fences, gates,
+dogs (there being none left, he will have to build them) and a great deal of automation.
 
 ### 2.2 Cast
 
@@ -155,8 +156,8 @@ Don't:
 
 ### 3.1 Moment to moment (seconds)
 
-**Herd → build → watch → fix.** Gafoop flies over the map. He can nudge sheep directly with his
-crook (the pointer is a threat, as in the `sheepherding` prototype). He places fences, gates and
+**Herd → build → watch → fix.** Gafoop flies over the map. He can nudge sheep directly just by
+flying near them (his presence is the threat, as the pointer is in the `sheepherding` prototype). He places fences, gates and
 stations, then watches sheep flow and spots the jam, the leak or the panic.
 
 ### 3.2 Session loop (minutes)
@@ -207,7 +208,9 @@ move; nothing else in the game may reach into it.
 | Guarantee | Scenario test (targets, tuned over time) |
 |---|---|
 | Sheep move away from threats and toward lures | A flock under a threat field ends farther away; with a lure, closer |
-| A driven flock can be penned | Gafoop's crook pens 30 sheep through a 2 m gate within a time limit |
+| A driven flock can be penned | Gafoop pens 30 sheep through a 3 m gate within a time limit (a 2 m gate jams: messy early) |
+| Pressure does not crush the flock | Walking up to a flock bunches it but keeps most of its spread |
+| Fenced-off stragglers can be worked | A lone sheep fenced off from its flock settles, and can be walked out of a far gap instead of pressing the fence |
 | Single-file races flow | A curved race with a driver at the entry sustains ≥ N sheep/min |
 | Over-driving jams | Doubling driver pressure in a race lowers throughput (breakback appears) |
 | Panic spreads by line of sight | A startle reaches a flock behind hurdles, but not one behind a stone wall |
@@ -517,11 +520,16 @@ sign Form 77-B in orbit, then roll credits).
 Gafoop hovers on his disc above the map (no pathfinding pain). He is the most important driver
 in the early game and becomes a manager later.
 
+**Sheep react to Gafoop by proximity alone.** There is no "scare" button: he is always a threat,
+and how much depends only on how close he is and how fast he closes in, exactly like a dog or a
+shepherd. Herding is positioning: work the edge of the flight zone, approach slowly to walk a
+flock, quickly to make it run. (Playtest note from M1: a press button with a drawn radius made
+it unclear whether sheep were reacting to him or to the clicks.)
+
 | Ability | Input | Notes |
 |---|---|---|
-| Hover | WASD / drag | Fast, ignores terrain |
-| **Crook push** | Hold LMB on the ground | A threat field under the cursor, exactly as in the `sheepherding` prototype |
-| **Crook pull** | Hold RMB | A lure field (a bribe of oats) |
+| Hover | Follows the mouse | Fast, ignores terrain. His presence is the threat |
+| **Feed bucket** | Hold a mouse button | A lure (a bribe of oats). While he rattles it, sheep forgive him being close |
 | **Megaphone** | Space | Startle pulse with cooldown. Very effective; very stressful |
 | **Whistle commands** | 1–4 | Direct nearby mechanical herders (Iron+): come by, away, walk up, lie down (real sheepdog commands, learned from human books) |
 | **Build mode** | B / toolbar | Grid placement, drag-to-draw fences and races, rotation, blueprints (copy/paste) |
@@ -529,8 +537,10 @@ in the early game and becomes a manager later.
 
 ### 9.2 Upgrades
 
-Medals (cosmetic plus small perks) come from Audits and supply drops: a wider crook field,
-softer pressure (less stress), a bigger megaphone, a faster disc. Gafoop's cap grows one size per
+Medals (cosmetic plus small perks) come from Audits and supply drops: softer pressure (less
+stress), a bigger megaphone, a faster disc, and the **cloaking field**: a stealth mode in which
+Gafoop flies without disturbing the sheep at all, for repositioning around a flock or slipping
+behind a straggler. It drains while on, so it is a tool, not a way of playing. Gafoop's cap grows one size per
 era; this is the only visible sign of progress he cares about.
 
 ---
@@ -698,7 +708,7 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
 | Milestone | Goal | Exit criteria |
 |---|---|---|
 | **M0 — Foundations** ✅ | Pixel pipeline, audio engine, voice pipeline, intro cutscene | Intro plays in browser; movie export works |
-| **M1 — A flock in a field** 🟡 | Flock contract + current model behind it; chunked terrain; Gafoop avatar; crook herding; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
+| **M1 — A flock in a field** 🟡 | Flock contract + current model behind it; chunked terrain; Gafoop avatar; herding by proximity; fences and a pen | "Herd 30 sheep into a pen" feels great at 60 fps |
 | **M2 — The first herdway** | Races, gates, the shearing shed, packs, the spindle; flow overlay | A closed loop pen → shed → spindle → pen runs unattended for 10 minutes |
 | **M3 — Stone Age vertical slice** | Quarry, treadmill power, thinking stones, research, Audit I + Ewehenge, save/load | 2 hours of play from the intro to Audit I |
 | **M4 — Bronze and Iron** | Automaton herders, clockwork collies, gongs, dye sorting, bell-wethers, smelting, lanterns, tunnels, water and wind | Audits II and III playable |
@@ -715,8 +725,8 @@ breeds · 3 hazards · intro, 4 Audit cutscenes and an ending · sandbox mode.
    chunking waits for maps big enough to need it.
 3. ⏳ An instanced sheep renderer. M1 draws each sheep as the intro's animated model, which is
    fine up to about a hundred sheep; instancing is needed before M3's flock sizes.
-4. ✅ The Gafoop controller: the crook (threat), plus a feed bucket (lure) and a megaphone
-   (startle).
+4. ✅ The Gafoop controller: his presence is the threat (proximity only, no button), plus a
+   feed bucket (lure) and a megaphone (startle).
 5. ✅ Fences as capsule segments in a bucket grid (steering ray casts, side-preserving
    collision); a pen with a gate; the "herd into pen" goal and an audit verdict.
 6. ✅ The game camera at 640×360 with integer upscaling, four rotations and stepped zoom.

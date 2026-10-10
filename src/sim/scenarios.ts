@@ -102,6 +102,8 @@ export class ScriptedDriver {
   /** working distance behind the flock: shrinks while the flock stands, grows while it runs */
   standoff = 7;
   minStandoff = 4;
+  /** which way to turn round fences: +1 or -1 */
+  private turn = 1;
   maxStandoff = 8;
 
   constructor(
@@ -125,22 +127,30 @@ export class ScriptedDriver {
     let gx = 0;
     let gy = 0;
     let spd = 0;
+    let progress = 0;
     let n = 0;
     for (let i = 0; i < o.count; i++) {
       if (done(i)) continue;
       gx += o.x[i];
       gy += o.y[i];
       spd += o.speed[i];
+      // how fast this sheep is heading for the goal
+      const tx = this.goalX - o.x[i];
+      const ty = this.goalY - o.y[i];
+      const tl = Math.hypot(tx, ty) || 1;
+      progress += (o.speed[i] * (Math.cos(o.heading[i]) * tx + Math.sin(o.heading[i]) * ty)) / tl;
       n++;
     }
     if (n === 0) return;
     gx /= n;
     gy /= n;
     spd /= n;
-    // walk up on a flock that stands still, back off one that runs
-    if (spd < 0.6) this.standoff -= 0.8 * dt;
-    else if (spd > 2.2) this.standoff += 1.5 * dt;
-    this.standoff = Math.min(this.maxStandoff, Math.max(this.minStandoff, this.standoff));
+    progress /= n;
+    // walk up while the sheep are not getting anywhere, back off when they run
+    if (spd > 2.2) this.standoff += 1.5 * dt;
+    else if (progress < 0.4) this.standoff -= 0.8 * dt;
+    // a lone straggler needs working closer than a flock does
+    this.standoff = Math.min(this.maxStandoff, Math.max(n <= 3 ? 1.5 : this.minStandoff, this.standoff));
 
     let far = -1;
     let farD = 0;
@@ -185,22 +195,23 @@ export class ScriptedDriver {
     const d = Math.hypot(dx, dy);
     if (d < 1e-6) return;
     const step = Math.min(d, this.speed * dt);
-    const nx = this.x + (dx / d) * step;
-    const ny = this.y + (dy / d) * step;
-    for (const f of this.fences) {
-      if (segmentsIntersect(this.x, this.y, nx, ny, f.ax, f.ay, f.bx, f.by)) {
-        // slide along the fence instead of stopping dead
-        const fx = f.bx - f.ax;
-        const fy = f.by - f.ay;
-        const fl = Math.hypot(fx, fy) || 1;
-        const along2 = ((nx - this.x) * fx + (ny - this.y) * fy) / fl;
-        this.x += (fx / fl) * along2;
-        this.y += (fy / fl) * along2;
+    // when a fence is in the way, turn progressively further until the way is clear, trying
+    // first the side that worked last time so the driver does not dither at a corner
+    for (const a of [0, 0.5, 1.0, 1.5, 2.1, 2.7]) {
+      for (const sgn of a === 0 ? [1] : [this.turn, -this.turn]) {
+        const c = Math.cos(a * sgn);
+        const sn = Math.sin(a * sgn);
+        const ux = (dx / d) * c - (dy / d) * sn;
+        const uy = (dx / d) * sn + (dy / d) * c;
+        const nx = this.x + ux * step;
+        const ny = this.y + uy * step;
+        if (this.fences.some((f) => segmentsIntersect(this.x, this.y, nx, ny, f.ax, f.ay, f.bx, f.by))) continue;
+        if (a > 0) this.turn = sgn;
+        this.x = nx;
+        this.y = ny;
         return;
       }
     }
-    this.x = nx;
-    this.y = ny;
   }
 }
 

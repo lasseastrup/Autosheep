@@ -26,17 +26,15 @@ await page.evaluate(() => window.__game.tick(30));
 await shot('00-start');
 
 if (script === 'start') {
-  // hover toward the flock, pressing
+  // fly toward the flock
   await page.evaluate(() => {
     const g = window.__game.game;
     g.input.pointer = { x: 420, y: 180 };
-    g.input.press = true;
     window.__game.tick(120);
   });
-  await shot('01-press');
+  await shot('01-approach');
   await page.evaluate(() => {
     const g = window.__game.game;
-    g.input.press = false;
     g.input.bucket = true;
     window.__game.tick(90);
   });
@@ -67,7 +65,6 @@ if (script === 'herd') {
       for (let i = 0; i < o.count; i++) if (!inPen(o, i)) { gx += o.x[i]; gy += o.y[i]; spd += o.speed[i]; n++; }
       if (n === 0) {
         if (!g.gateClosed) g.input.hits.push('g');
-        g.input.press = false;
         G.tick(1, 1 / 60, false);
         if (g.won) { G.tick(150, 1 / 60, false); G.tick(1); break; }
         continue;
@@ -91,7 +88,6 @@ if (script === 'herd') {
       // the in-game control: the cursor sits where Gafoop should go
       const sp = g.cam.toScreen(p.clone().set(tx, 0, ty));
       g.input.pointer = { x: Math.max(0, Math.min(640, sp.x)), y: Math.max(0, Math.min(360, sp.y)) };
-      g.input.press = true;
       G.tick(1, 1 / 60, [25, 55, 100].some((t) => f === 60 * t));
       if (f % 600 === 0) log.push(`t=${g.clock.toFixed(0)} penned=${g.pennedCount} gafoop=${p.x.toFixed(0)},${p.z.toFixed(0)} flock=${gx.toFixed(0)},${gy.toFixed(0)}`);
       if ([25, 55, 100].some((t) => f === 60 * t)) { (window.__shots ??= []).push(G.grab()); }
