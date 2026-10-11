@@ -37,6 +37,13 @@ function put(r: Run, j: number, x: number, y: number): void {
   r.model.release(j);
 }
 
+/** One press of the button: the usable goes off, if it is ready. */
+function press(r: Run): void {
+  r.input.use = true;
+  r.step();
+  r.input.use = false;
+}
+
 /** A Gloop at (x, y) going after sheep j. */
 function gloopAt(r: Run, x: number, y: number, j?: number): number {
   const i = r.enemies.spawn('gloop', x, y, 1);
@@ -128,12 +135,13 @@ describe('armaments', () => {
   });
 });
 
-describe('tools', () => {
+describe('usables', () => {
   test('the dog whistle brings a split flock back together', () => {
     const gap = (whistle: boolean) => {
       const r = run(whistle ? { whistle: 1 } : {});
       const f = r.flockCentre();
       for (let j = 4; j < 8; j++) put(r, j, f.x + 16 + (j % 2), f.y + (j - 6));
+      press(r);
       seconds(r, 6);
       const o = r.model.out;
       const mid = (a: number, b: number) => {
@@ -150,29 +158,32 @@ describe('tools', () => {
     const r = run({ woof: 1 });
     park(r, 30, 30);
     const i = r.enemies.spawn('gloop', 31.5, 30, 1);
+    press(r);
     seconds(r, 0.5);
     expect(Math.hypot(r.enemies.x[i] - 30, r.enemies.y[i] - 30)).toBeGreaterThan(3.5);
   });
 
-  test('a clockwork collie comes to the flock and bites a monster at it', () => {
-    const r = run({ collie: 1 });
-    const f = r.flockCentre();
-    park(r, f.x - 6, f.y);
-    seconds(r, 0.1);
-    expect(r.collies.length).toBe(1);
-    const o = r.model.out;
-    const i = gloopAt(r, o.x[0] + 2.5, o.y[0] + 2.5, 0);
-    seconds(r, 4);
-    expect(r.enemies.alive[i] === 0 || r.enemies.hp[i] < 8).toBe(true);
+  test('a usable needs its cooldown before it goes off again', () => {
+    const r = run({ woof: 1 });
+    park(r, 30, 30);
+    let woofs = 0;
+    for (let k = 0; k < 6; k++) {
+      press(r);
+      seconds(r, 0.2);
+      woofs += r.drain().filter((e) => e.kind === 'woof').length;
+    }
+    expect(woofs).toBe(1);
+    expect(r.useCooldown).toBeGreaterThan(0);
   });
 
   test('a salt lick goes down where Gafoop is, and the flock gathers at it', () => {
     const r = run({ lick: 1 });
     const f = r.flockCentre();
     park(r, f.x + 7, f.y);
-    seconds(r, 2.5);
+    press(r);
     const k = [...r.licks.alive].indexOf(1);
     expect(k).toBeGreaterThanOrEqual(0);
+    expect(r.licks.x[k]).toBeCloseTo(r.gafoop.x, 0);
     park(r, 110, 80);
     const before = Math.hypot(r.flockCentre().x - r.licks.x[k], r.flockCentre().y - r.licks.y[k]);
     seconds(r, 6);
@@ -182,7 +193,10 @@ describe('tools', () => {
 
   test('an inflatable sheep draws a Gloop, and bursts on it', () => {
     const r = run({ decoys: 1 });
-    seconds(r, 1.2);
+    const f0 = r.flockCentre();
+    park(r, f0.x + 5, f0.y + 3);
+    press(r);
+    park(r, 110, 80);
     const k = [...r.decoys.alive].indexOf(1);
     expect(k).toBeGreaterThanOrEqual(0);
     const f = r.flockCentre();
@@ -194,6 +208,72 @@ describe('tools', () => {
     expect(r.decoys.alive[k]).toBe(0);
     expect(r.enemies.alive[i]).toBe(0);
     expect(r.stats.lost + r.takenCount).toBe(0);
+  });
+
+  test('a hurdle stops a Gloop coming through it', () => {
+    const reach = (hurdle: boolean) => {
+      const r = run(hurdle ? { hurdle: 1 } : {});
+      park(r, 30, 30);
+      r.gafoop.facing = 0;
+      if (hurdle) press(r);
+      park(r, 24, 30);
+      const i = gloopAt(r, 34, 30, -1);
+      seconds(r, 5);
+      return r.enemies.x[i];
+    };
+    expect(reach(false)).toBeLessThan(29);
+    expect(reach(true)).toBeGreaterThan(30);
+  });
+
+  test('the tractor beam brings a sheep being carried off back to the flock', () => {
+    const r = run({ beam: 1 }, { cushion: false });
+    const o = r.model.out;
+    for (let k = 0; k < 3; k++) gloopAt(r, o.x[0] + 0.3 * Math.cos(k * 2), o.y[0] + 0.3 * Math.sin(k * 2), 0);
+    seconds(r, 0.3);
+    expect(r.status[0]).toBe(Sheep.Carried);
+    park(r, o.x[0] + 8, o.y[0]);
+    press(r);
+    expect(r.status[0]).toBe(Sheep.Flock);
+    expect(r.useCooldown).toBeGreaterThan(0);
+    const f = r.flockCentre();
+    expect(Math.hypot(o.x[0] - f.x, o.y[0] - f.y)).toBeLessThan(4);
+  });
+
+  test('a tractor beam with nothing to beam does not spend itself', () => {
+    const r = run({ beam: 1 });
+    park(r, 30, 30);
+    press(r);
+    expect(r.useCooldown).toBe(0);
+    expect(r.drain().some((e) => e.kind === 'fizzle')).toBe(true);
+  });
+
+  test('one usable at a time: another comes as a swap, and takes its place', () => {
+    const r = run({ stamp: 1, woof: 2 });
+    for (let k = 0; k < 30; k++) {
+      for (const c of r.deal()) {
+        if ('item' in c && ITEMS[c.item].kind === 'usable' && c.item !== 'woof') expect(c.swap).toBe('woof');
+      }
+    }
+    r.choices = [{ item: 'whistle', level: 1, swap: 'woof' }, { extra: 'snack' }, { extra: 'salvage' }];
+    r.pending = 1;
+    r.choose(0);
+    expect(r.usable).toBe('whistle');
+    expect(r.lvl('woof')).toBe(0);
+    expect(SLOTS.usable).toBe(1);
+  });
+});
+
+describe('helpers that work by themselves', () => {
+  test('a clockwork collie comes to the flock and bites a monster at it', () => {
+    const r = run({ collie: 1 });
+    const f = r.flockCentre();
+    park(r, f.x - 6, f.y);
+    seconds(r, 0.1);
+    expect(r.collies.length).toBe(1);
+    const o = r.model.out;
+    const i = gloopAt(r, o.x[0] + 2.5, o.y[0] + 2.5, 0);
+    seconds(r, 4);
+    expect(r.enemies.alive[i] === 0 || r.enemies.hp[i] < 8).toBe(true);
   });
 
   test('a shearing drone shears full fleeces in the flock, one sheep at a time', () => {
@@ -257,22 +337,35 @@ describe('provisions', () => {
 });
 
 describe('dealing', () => {
-  test('until Gafoop has a tool, one card in three is a tool', () => {
+  test('until Gafoop has a usable, one card in three is a usable', () => {
     const r = new Run(field, { seed: 2 });
     for (let k = 0; k < 20; k++) {
       const cards = r.deal();
-      expect(cards.some((c) => 'item' in c && ITEMS[c.item].kind === 'tool')).toBe(true);
+      expect(cards.some((c) => 'item' in c && ITEMS[c.item].kind === 'usable')).toBe(true);
     }
   });
 
   test('a kind with its slots full offers only what is held', () => {
     const r = new Run(field, { seed: 3 });
-    r.items.set('bucket', 1).set('whistle', 1).set('woof', 1);
-    expect(SLOTS.tool).toBe(3);
+    const five = ['stamp', 'stapler', 'shredder', 'crook', 'planes'] as const;
+    for (const id of five) r.items.set(id, 1);
+    expect(SLOTS.armament).toBe(5);
     for (let k = 0; k < 40; k++) {
       for (const c of r.deal()) {
-        if ('item' in c && ITEMS[c.item].kind === 'tool') expect(['bucket', 'whistle', 'woof']).toContain(c.item);
+        if ('item' in c && ITEMS[c.item].kind === 'armament') expect(five).toContain(c.item);
       }
+    }
+  });
+
+  test('never more than one swap a deal: with nothing else left, the extras fill in', () => {
+    const r = new Run(field, { seed: 4 });
+    r.items.clear();
+    const full = ['stamp', 'stapler', 'shredder', 'crook', 'planes', 'woof', 'disc', 'medal', 'expedite', 'cap', 'calm'] as const;
+    for (const id of full) r.items.set(id, ITEMS[id].max);
+    for (let k = 0; k < 20; k++) {
+      const cards = r.deal();
+      expect(cards.filter((c) => 'item' in c && c.swap).length).toBe(1);
+      expect(cards.filter((c) => 'extra' in c).length).toBe(2);
     }
   });
 

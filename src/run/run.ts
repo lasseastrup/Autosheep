@@ -1,4 +1,4 @@
-import { SheepState, type FlockModel, type Stimulus } from '../sim/contract';
+import { SheepState, type FlockModel, type Obstacle, type Stimulus } from '../sim/contract';
 import { SheepherdingV1 } from '../sim/models/sheepherding-v1';
 import { GrassField } from '../sim/grass';
 import { cluster } from '../sim/scenarios';
@@ -69,6 +69,9 @@ export type RunEvent =
   | { kind: 'burst'; x: number; y: number; r: number }
   | { kind: 'lamb'; x: number; y: number }
   | { kind: 'kick'; sheep: number }
+  | { kind: 'hurdle'; x: number; y: number }
+  | { kind: 'beamed'; ax: number; ay: number; bx: number; by: number }
+  | { kind: 'fizzle'; id: ItemId; x: number; y: number }
   | { kind: 'hearing' }
   | { kind: 'dismissed' };
 
@@ -94,8 +97,8 @@ export interface Booth {
 export interface RunInput {
   /** where Gafoop wants to go: a direction on the ground, length up to 1 (full speed) */
   move: { x: number; y: number };
-  /** the bucket is held */
-  bucket: boolean;
+  /** the button is down: the usable (a bucket works while it is held, the others when pressed) */
+  use: boolean;
 }
 
 /**
@@ -185,6 +188,14 @@ export class Run {
   /** inflatable sheep: Gloops go for them, and they burst */
   readonly decoys = { cap: 6, alive: new Uint8Array(6), x: new Float32Array(6), y: new Float32Array(6), life: new Float32Array(6), age: new Float32Array(6) };
 
+  /** portable hurdles: fences put down across Gafoop's path */
+  readonly hurdles = {
+    cap: 2,
+    alive: new Uint8Array(2), ax: new Float32Array(2), ay: new Float32Array(2), bx: new Float32Array(2), by: new Float32Array(2),
+    life: new Float32Array(2), age: new Float32Array(2),
+  };
+  private readonly fieldObstacles: Obstacle[];
+
   /** salt licks the flock gathers round */
   readonly licks = { cap: 2, alive: new Uint8Array(2), x: new Float32Array(2), y: new Float32Array(2), life: new Float32Array(2), age: new Float32Array(2) };
 
@@ -224,7 +235,11 @@ export class Run {
   spawnRadius = RUN.spawnRadius;
   /** monsters come in (off for tests and tooling that set up their own) */
   spawning = true;
-  readonly input: RunInput = { move: { x: 0, y: 0 }, bucket: false };
+  readonly input: RunInput = { move: { x: 0, y: 0 }, use: false };
+  /** seconds until the usable is ready again, and how long its last wait was (for the HUD) */
+  useCooldown = 0;
+  useCooldownOf = 1;
+  private useWas = false;
   private events: RunEvent[] = [];
   private readonly firsts = new Set<string>();
   private readonly startles: Stimulus[] = [];
@@ -252,6 +267,7 @@ export class Run {
     const model = new SheepherdingV1(MODEL_PATCH);
     model.init({ seed, width: FIELD.width, height: FIELD.height, sheep });
     model.setObstacles(field.obstacles);
+    this.fieldObstacles = field.obstacles;
     this.booths = field.booths.map((site) => ({ site, cur: -1, t: 0, hop: 0, fromX: 0, fromY: 0, wool0: 0, off: -1, offT: 0, shorn: 0 }));
     model.setGrass(this.options.grazing ? this.grass : null);
     this.model = model;
@@ -338,6 +354,16 @@ export class Run {
     return RUN.wool.cushion - 0.075 * this.lvl('fleece');
   }
 
+  private get hurdlesUp(): boolean {
+    return this.hurdles.alive[0] === 1 || this.hurdles.alive[1] === 1;
+  }
+
+  /** The usable Gafoop has, if any (there is only ever one). */
+  get usable(): ItemId | null {
+    for (const id of this.items.keys()) if (ITEMS[id].kind === 'usable') return id;
+    return null;
+  }
+
   /** Gafoop's pips of composure (Composure Training adds to them). */
   get composureMax(): number {
     return RUN.gafoop.composure + this.lvl('composure');
@@ -384,6 +410,7 @@ export class Run {
     this.direct();
     this.strayStep();
     this.grid.build(this.enemies);
+    this.useStep(dt);
     this.tapeStep(dt);
     this.enemyStep(dt);
     this.flockStep(dt);
@@ -391,7 +418,7 @@ export class Run {
     this.woolStep(dt);
     this.grid.build(this.enemies);
     this.weaponStep(dt);
-    this.toolStep(dt);
+    this.helperStep(dt);
     this.provisionStep(dt);
     this.stapleStep(dt);
     this.planeStep(dt);
@@ -774,8 +801,19 @@ export class Run {
       e.vx[i] = (dx / d) * spec.speed * e.slow[i];
       e.vy[i] = (dy / d) * spec.speed * e.slow[i];
     }
+    const x0 = e.x[i];
+    const y0 = e.y[i];
     e.x[i] += (e.vx[i] + e.kx[i]) * dt;
     e.y[i] += (e.vy[i] + e.ky[i]) * dt;
+    // a hurdle in the way: it slides along it if it can, or waits
+    if (this.hurdlesUp && this.blocked(x0, y0, e.x[i], e.y[i], spec.radius)) {
+      if (!this.blocked(x0, y0, e.x[i], y0, spec.radius)) e.y[i] = y0;
+      else if (!this.blocked(x0, y0, x0, e.y[i], spec.radius)) e.x[i] = x0;
+      else {
+        e.x[i] = x0;
+        e.y[i] = y0;
+      }
+    }
     if (reeling) return;
     if (decoy >= 0) {
       if (d < spec.radius + 0.6) this.burst(decoy);
@@ -932,6 +970,11 @@ export class Run {
       if (d > 1e-3) {
         x += (dx / d) * Math.min(d, speed * dt);
         y += (dy / d) * Math.min(d, speed * dt);
+      }
+      // a hurdle in the way holds the whole team up
+      if (this.hurdlesUp && this.blocked(o.x[j], o.y[j], x, y, 0.5)) {
+        x = o.x[j];
+        y = o.y[j];
       }
       this.model.place(j, x, y);
       this.lift[j] += ((lifted ? 0.7 : 0.1) - this.lift[j]) * (1 - Math.exp(-dt * 6));
@@ -1188,7 +1231,7 @@ export class Run {
     // Gafoop: the flock moves off as he comes; with a bucket held he is mostly forgiven, and called to
     const g = this.gafoop;
     if (g.ko <= 0) {
-      const bucket = this.input.bucket ? this.lvl('bucket') : 0;
+      const bucket = this.input.use && this.usable === 'bucket' ? this.lvl('bucket') : 0;
       const p = bucket ? RUN.withBucket : RUN.presence;
       out.push({ id: 1, kind: 'threat', x: g.x, y: g.y, strength: p.strength, radius: p.radius });
       if (bucket) {
@@ -1835,63 +1878,242 @@ export class Run {
   }
 
   /**
-   * The tools: gadgets that work on the flock and the field rather than on monsters (the feed
-   * bucket is read where the flock is stepped).
+   * The usable, on the button: the bucket works while it is held (read where the flock is
+   * stepped); the others go off when it is pressed, if they are ready, and then need a while.
    */
-  private toolStep(dt: number): void {
+  private useStep(dt: number): void {
+    this.useCooldown = Math.max(0, this.useCooldown - dt);
+    const pressed = this.input.use && !this.useWas;
+    this.useWas = this.input.use;
+    const id = this.usable;
+    if (!id || ITEMS[id].hold || !pressed || this.useCooldown > 0 || this.gafoop.ko > 0) return;
+    const l = this.lvl(id);
+    const wait =
+      id === 'whistle' ? this.blowWhistle(l)
+        : id === 'woof' ? this.bark(l)
+          : id === 'lick' ? this.dropLick(l)
+            : id === 'decoys' ? this.dropDecoy(l)
+              : id === 'hurdle' ? this.dropHurdle(l)
+                : id === 'beam' ? this.beamHome(l)
+                  : 0;
+    if (wait > 0) this.useCooldown = this.useCooldownOf = wait * this.quick;
+    else this.emit({ kind: 'fizzle', id, x: this.gafoop.x, y: this.gafoop.y });
+  }
+
+  /** The dog whistle: the whole flock is called to its middle. Returns the cooldown (0: not used). */
+  private blowWhistle(l: number): number {
+    const S = STATS.whistle(l);
+    const f = this.flockCentre();
+    if (f.n === 0) return 0;
+    this.call = { x: f.x, y: f.y, until: this.time + S.lasts, radius: S.radius, strength: S.strength };
+    this.emit({ kind: 'whistle', x: f.x, y: f.y, r: S.radius });
+    return S.cooldown;
+  }
+
+  /** The Woof-Woof: monsters round Gafoop are blown back, dizzy, and grabbers let go. */
+  private bark(l: number): number {
+    const S = STATS.woof(l);
+    const g = this.gafoop;
+    const e = this.enemies;
+    const r = S.radius * this.wide;
+    const near: number[] = [];
+    this.grid.near(g.x, g.y, r + 1.6, (i) => {
+      if (e.alive[i] && e.kind[i] !== KIND.saucer && Math.hypot(e.x[i] - g.x, e.y[i] - g.y) < r + ENEMY[KINDS[e.kind[i]]].radius) near.push(i);
+    });
+    for (const i of near) {
+      if (e.phase[i] === Phase.Attached) {
+        e.phase[i] = Phase.Seek;
+        e.carry[i] = -1;
+      }
+      const dx = e.x[i] - g.x;
+      const dy = e.y[i] - g.y;
+      const d = Math.hypot(dx, dy) || 1;
+      this.hurt(i, S.damage * this.might);
+      if (!e.alive[i]) continue;
+      this.knock(i, dx / d, dy / d, S.knock);
+      e.t[i] = -S.dizzy;
+      e.retarget[i] = S.dizzy;
+    }
+    if (S.startle) this.startles.push({ id: 0, kind: 'startle', x: g.x, y: g.y, strength: 1, radius: r + 2 });
+    this.emit({ kind: 'woof', x: g.x, y: g.y, r });
+    return S.cooldown;
+  }
+
+  /** A salt lick where Gafoop is (the oldest goes, if there are as many as there may be). */
+  private dropLick(l: number): number {
+    const S = STATS.lick(l);
+    const L = this.licks;
+    const k = this.slot(L.alive, L.age, S.count);
+    L.alive[k] = 1;
+    L.x[k] = Math.max(2, Math.min(FIELD.width - 2, this.gafoop.x));
+    L.y[k] = Math.max(2, Math.min(FIELD.height - 2, this.gafoop.y));
+    L.life[k] = S.lasts;
+    L.age[k] = 0;
+    this.emit({ kind: 'lick', x: L.x[k], y: L.y[k] });
+    return S.cooldown;
+  }
+
+  /** An inflatable sheep where Gafoop is. */
+  private dropDecoy(l: number): number {
+    const S = STATS.decoys(l);
+    const D = this.decoys;
+    const k = this.slot(D.alive, D.age, S.most);
+    if (D.alive[k]) this.emit({ kind: 'burst', x: D.x[k], y: D.y[k], r: 0 });
+    D.alive[k] = 1;
+    D.x[k] = Math.max(2, Math.min(FIELD.width - 2, this.gafoop.x));
+    D.y[k] = Math.max(2, Math.min(FIELD.height - 2, this.gafoop.y));
+    D.life[k] = S.lasts;
+    D.age[k] = 0;
+    this.emit({ kind: 'decoy', x: D.x[k], y: D.y[k] });
+    return S.cooldown;
+  }
+
+  /** A hurdle across Gafoop's path, centred on him: sheep and Gloops cannot get through it. */
+  private dropHurdle(l: number): number {
+    const S = STATS.hurdle(l);
+    const g = this.gafoop;
+    const H = this.hurdles;
+    const k = this.slot(H.alive, H.age, S.count);
+    const half = S.length / 2;
+    const sx = -Math.sin(g.facing) * half;
+    const sy = Math.cos(g.facing) * half;
+    const clampX = (x: number) => Math.max(0.5, Math.min(FIELD.width - 0.5, x));
+    const clampY = (y: number) => Math.max(0.5, Math.min(FIELD.height - 0.5, y));
+    H.alive[k] = 1;
+    H.ax[k] = clampX(g.x - sx);
+    H.ay[k] = clampY(g.y - sy);
+    H.bx[k] = clampX(g.x + sx);
+    H.by[k] = clampY(g.y + sy);
+    H.life[k] = S.lasts;
+    H.age[k] = 0;
+    this.syncObstacles();
+    this.emit({ kind: 'hurdle', x: g.x, y: g.y });
+    return S.cooldown;
+  }
+
+  /**
+   * Blorp's tractor beam: sheep being taken (nearest Gafoop first, within reach), or else the
+   * straggler furthest from the flock, are beamed to the flock's middle.
+   */
+  private beamHome(l: number): number {
+    const S = STATS.beam(l);
+    const g = this.gafoop;
+    const o = this.model.out;
+    const f = this.flockCentre();
+    const taken: { j: number; d: number }[] = [];
+    for (let j = 0; j < this.n; j++) {
+      const s = this.status[j];
+      if (s !== Sheep.Grabbed && s !== Sheep.Carried && s !== Sheep.Beamed) continue;
+      const d = Math.hypot(o.x[j] - g.x, o.y[j] - g.y);
+      if (d <= S.range) taken.push({ j, d });
+    }
+    taken.sort((a, b) => a.d - b.d || a.j - b.j);
+    const picks = taken.slice(0, S.count).map((t) => t.j);
+    if (!picks.length) {
+      let best = -1;
+      let bd = S.straggler;
+      for (let j = 0; j < this.n; j++) {
+        if (this.status[j] !== Sheep.Flock) continue;
+        const d = Math.hypot(o.x[j] - f.x, o.y[j] - f.y);
+        if (d > bd) { bd = d; best = j; }
+      }
+      if (best >= 0) picks.push(best);
+    }
+    if (!picks.length) return 0;
+    const e = this.enemies;
+    for (const j of picks) {
+      const ax = o.x[j];
+      const ay = o.y[j];
+      // whatever had it is left holding nothing, dizzy, and forgets about it for a moment
+      for (let i = 0; i < e.high; i++) {
+        if (!e.alive[i] || e.carry[i] !== j || e.kind[i] === KIND.saucer) continue;
+        e.t[i] = -1.2;
+        e.target[i] = -1;
+        e.retarget[i] = 1.5;
+      }
+      this.free(j, true);
+      for (let i = 0; i < e.high; i++) {
+        if (e.alive[i] && e.kind[i] !== KIND.saucer && e.target[i] === j) {
+          e.target[i] = -1;
+          e.retarget[i] = 1.5;
+        }
+      }
+      const a = this.rng.range(0, Math.PI * 2);
+      const r = Math.sqrt(Math.max(1, f.n)) * 0.5 + 1;
+      const x = Math.max(1, Math.min(FIELD.width - 1, f.x + Math.cos(a) * r));
+      const y = Math.max(1, Math.min(FIELD.height - 1, f.y + Math.sin(a) * r));
+      this.model.hold(j);
+      this.model.place(j, x, y);
+      this.model.release(j);
+      // set down from above
+      this.lift[j] = 3;
+      this.emit({ kind: 'beamed', ax, ay, bx: x, by: y });
+    }
+    return S.cooldown;
+  }
+
+  /** A free slot of `cap`, or the oldest if they are all taken. */
+  private slot(alive: Uint8Array, age: Float32Array, cap: number): number {
+    let k = -1;
+    for (let q = 0; q < cap; q++) if (!alive[q]) return q;
+    for (let q = 0; q < cap; q++) if (k < 0 || age[q] > age[k]) k = q;
+    return k;
+  }
+
+  /** The flock sees the field's obstacles and the hurdles standing. */
+  private syncObstacles(): void {
+    const H = this.hurdles;
+    const out = [...this.fieldObstacles];
+    for (let k = 0; k < H.cap; k++) {
+      if (H.alive[k]) out.push({ ax: H.ax[k], ay: H.ay[k], bx: H.bx[k], by: H.by[k], radius: 0.15, solid: false });
+    }
+    this.model.setObstacles(out);
+  }
+
+  /**
+   * Whether going from (ax, ay) to (bx, by) crosses a standing hurdle, or ends up closer to one
+   * than `r`: then whatever was going stays where it was.
+   */
+  private blocked(ax: number, ay: number, bx: number, by: number, r: number): boolean {
+    const H = this.hurdles;
+    for (let k = 0; k < H.cap; k++) {
+      if (!H.alive[k]) continue;
+      const ux = H.bx[k] - H.ax[k];
+      const uy = H.by[k] - H.ay[k];
+      const side = (x: number, y: number) => ux * (y - H.ay[k]) - uy * (x - H.ax[k]);
+      const s0 = side(ax, ay);
+      const s1 = side(bx, by);
+      const l2 = ux * ux + uy * uy || 1;
+      const t = Math.max(0, Math.min(1, ((bx - H.ax[k]) * ux + (by - H.ay[k]) * uy) / l2));
+      const d = Math.hypot(bx - (H.ax[k] + ux * t), by - (H.ay[k] + uy * t));
+      if (d < r) {
+        // already against it: only moving away from it is allowed
+        if (Math.abs(s1) < Math.abs(s0) || Math.sign(s1) !== Math.sign(s0)) return true;
+        continue;
+      }
+      if (Math.sign(s0) !== Math.sign(s1) && s0 !== 0) {
+        // the crossing point is on the hurdle
+        const k0 = s0 / (s0 - s1);
+        const cx = ax + (bx - ax) * k0;
+        const cy = ay + (by - ay) * k0;
+        const tc = ((cx - H.ax[k]) * ux + (cy - H.ay[k]) * uy) / l2;
+        if (tc >= -0.05 && tc <= 1.05) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The helpers that work by themselves: the clockwork collie (an armament, but it keeps going
+   * while Gafoop is knocked out) and the shearing drone; and the usables' licks, decoys and
+   * hurdles running out.
+   */
+  private helperStep(dt: number): void {
     const g = this.gafoop;
     const e = this.enemies;
     const o = this.model.out;
-    const cd = this.cooldown;
     const quick = this.quick;
     const f = this.flockCentre();
-
-    const whistle = this.lvl('whistle');
-    if (whistle) {
-      cd.whistle -= dt;
-      if (cd.whistle <= 0) {
-        const S = STATS.whistle(whistle);
-        cd.whistle = S.cooldown * quick;
-        if (f.n > 1) {
-          this.call = { x: f.x, y: f.y, until: this.time + S.lasts, radius: S.radius, strength: S.strength };
-          this.emit({ kind: 'whistle', x: f.x, y: f.y, r: S.radius });
-        }
-      }
-    }
-
-    const woof = this.lvl('woof');
-    if (woof && g.ko <= 0) {
-      cd.woof -= dt;
-      if (cd.woof <= 0) {
-        const S = STATS.woof(woof);
-        const r = S.radius * this.wide;
-        // it barks when there is something to bark at
-        const near: number[] = [];
-        this.grid.near(g.x, g.y, r + 1.6, (i) => {
-          if (e.alive[i] && e.kind[i] !== KIND.saucer && Math.hypot(e.x[i] - g.x, e.y[i] - g.y) < r + ENEMY[KINDS[e.kind[i]]].radius) near.push(i);
-        });
-        if (near.length) {
-          cd.woof = S.cooldown * quick;
-          for (const i of near) {
-            // grabbers let go of their sheep
-            if (e.phase[i] === Phase.Attached) {
-              e.phase[i] = Phase.Seek;
-              e.carry[i] = -1;
-            }
-            const dx = e.x[i] - g.x;
-            const dy = e.y[i] - g.y;
-            const d = Math.hypot(dx, dy) || 1;
-            this.hurt(i, S.damage * this.might);
-            if (!e.alive[i]) continue;
-            this.knock(i, dx / d, dy / d, S.knock);
-            e.t[i] = -S.dizzy;
-            e.retarget[i] = S.dizzy;
-          }
-          if (S.startle) this.startles.push({ id: 0, kind: 'startle', x: g.x, y: g.y, strength: 1, radius: r + 2 });
-          this.emit({ kind: 'woof', x: g.x, y: g.y, r });
-        } else cd.woof = 0;
-      }
-    }
 
     const collie = this.lvl('collie');
     if (collie) {
@@ -1956,27 +2178,6 @@ export class Run {
       L.age[k] += dt;
       if (L.life[k] <= 0) L.alive[k] = 0;
     }
-    const lick = this.lvl('lick');
-    if (lick) {
-      cd.lick -= dt;
-      if (cd.lick <= 0) {
-        const S = STATS.lick(lick);
-        if (g.ko <= 0 && f.n > 0 && Math.hypot(g.x - f.x, g.y - f.y) < 15) {
-          cd.lick = S.cooldown * quick;
-          // a free spot, or the oldest goes
-          let k = -1;
-          for (let q = 0; q < S.count; q++) if (!L.alive[q]) { k = q; break; }
-          if (k < 0) for (let q = 0; q < S.count; q++) if (k < 0 || L.age[q] > L.age[k]) k = q;
-          L.alive[k] = 1;
-          L.x[k] = Math.max(2, Math.min(FIELD.width - 2, g.x));
-          L.y[k] = Math.max(2, Math.min(FIELD.height - 2, g.y));
-          L.life[k] = S.lasts;
-          L.age[k] = 0;
-          this.emit({ kind: 'lick', x: L.x[k], y: L.y[k] });
-        } else cd.lick = 1;
-      }
-    }
-
     const D = this.decoys;
     for (let k = 0; k < D.cap; k++) {
       if (!D.alive[k]) continue;
@@ -1984,35 +2185,30 @@ export class Run {
       D.age[k] += dt;
       if (D.life[k] <= 0) D.alive[k] = 0;
     }
-    const decoys = this.lvl('decoys');
-    if (decoys && f.n > 0) {
-      cd.decoys -= dt;
-      if (cd.decoys <= 0) {
-        const S = STATS.decoys(decoys);
-        cd.decoys = S.cooldown * quick;
-        let alive = 0;
-        for (let k = 0; k < D.cap; k++) alive += D.alive[k];
-        let k = -1;
-        for (let q = 0; q < D.cap; q++) if (!D.alive[q]) { k = q; break; }
-        if (alive < S.most && k >= 0) {
-          // at the edge of the flock, on the side the nearest monster is coming from
-          let a = this.rng.range(0, Math.PI * 2);
-          let bd = 30;
-          for (let i = 0; i < e.high; i++) {
-            if (!e.alive[i] || e.kind[i] === KIND.saucer) continue;
-            const d = Math.hypot(e.x[i] - f.x, e.y[i] - f.y);
-            if (d < bd) { bd = d; a = Math.atan2(e.y[i] - f.y, e.x[i] - f.x) + this.rng.range(-0.5, 0.5); }
-          }
-          const r = Math.sqrt(f.n) * 0.9 + 2.5;
-          D.alive[k] = 1;
-          D.x[k] = Math.max(2, Math.min(FIELD.width - 2, f.x + Math.cos(a) * r));
-          D.y[k] = Math.max(2, Math.min(FIELD.height - 2, f.y + Math.sin(a) * r));
-          D.life[k] = S.lasts;
-          D.age[k] = 0;
-          this.emit({ kind: 'decoy', x: D.x[k], y: D.y[k] });
-        }
+    const H = this.hurdles;
+    let fell = false;
+    const shock = STATS.hurdle(Math.max(1, this.lvl('hurdle'))).shock * this.might;
+    for (let k = 0; k < H.cap; k++) {
+      if (!H.alive[k]) continue;
+      H.life[k] -= dt;
+      H.age[k] += dt;
+      if (H.life[k] <= 0) {
+        H.alive[k] = 0;
+        fell = true;
+        continue;
+      }
+      // an electrified one shocks what leans on it
+      if (shock > 0 && this.lvl('hurdle')) {
+        const mx = (H.ax[k] + H.bx[k]) / 2;
+        const my = (H.ay[k] + H.by[k]) / 2;
+        const half = Math.hypot(H.bx[k] - H.ax[k], H.by[k] - H.ay[k]) / 2;
+        this.grid.near(mx, my, half + 1.5, (i) => {
+          if (!e.alive[i] || e.kind[i] === KIND.saucer) return;
+          if (this.blocked(e.x[i], e.y[i], e.x[i], e.y[i], ENEMY[KINDS[e.kind[i]]].radius + 0.3)) this.hurt(i, shock * dt, false);
+        });
       }
     }
+    if (fell) this.syncObstacles();
 
     const drone = this.lvl('drone');
     if (drone) {
@@ -2280,22 +2476,26 @@ export class Run {
 
   /**
    * Three cards: next levels of what Gafoop has (more likely: a build should grow), or new
-   * things while their kind has slots. Until he has a tool, one of the three is a tool.
+   * things while their kind has slots. He has one usable at most: once he has one, others come
+   * now and then as swaps, never more than one a deal (with little else left to offer, the
+   * extras fill in, rather than forcing a swap). Until he has one, one of the three is a usable.
    */
   deal(): Card[] {
     const pool: { card: Card; w: number }[] = [];
     const held = (kind: ItemKind) => ITEM_IDS.filter((id) => ITEMS[id].kind === kind && this.lvl(id) > 0).length;
+    const mine = this.usable;
     for (const id of ITEM_IDS) {
       const def = ITEMS[id];
       const l = this.lvl(id);
       if (l > 0 && l < def.max) pool.push({ card: { item: id, level: l + 1 }, w: 4 });
+      else if (l === 0 && def.kind === 'usable' && mine) pool.push({ card: { item: id, level: 1, swap: mine }, w: 0.4 });
       else if (l === 0 && held(def.kind) < SLOTS[def.kind]) pool.push({ card: { item: id, level: 1 }, w: 1 });
     }
     const cards: Card[] = [];
-    if (held('tool') === 0) {
-      const tools = pool.filter((c) => 'item' in c.card && ITEMS[c.card.item].kind === 'tool');
-      if (tools.length) {
-        const t = tools[Math.floor(this.rng.next() * tools.length)];
+    if (!mine) {
+      const usables = pool.filter((c) => 'item' in c.card && ITEMS[c.card.item].kind === 'usable');
+      if (usables.length) {
+        const t = usables[Math.floor(this.rng.next() * usables.length)];
         cards.push(t.card);
         pool.splice(pool.indexOf(t), 1);
       }
@@ -2304,12 +2504,19 @@ export class Run {
       let r = this.rng.next() * pool.reduce((s, c) => s + c.w, 0);
       let k = 0;
       while (k < pool.length - 1 && r >= pool[k].w) r -= pool[k++].w;
-      cards.push(pool[k].card);
+      const c = pool[k].card;
+      cards.push(c);
       pool.splice(k, 1);
+      if ('item' in c && c.swap) {
+        for (let q = pool.length - 1; q >= 0; q--) {
+          const d = pool[q].card;
+          if ('item' in d && d.swap) pool.splice(q, 1);
+        }
+      }
     }
     const extras: Extra[] = ['sheep', 'snack', 'salvage'];
     for (let k = 0; cards.length < 3; k++) cards.push({ extra: extras[k] });
-    // the tool need not always be on the left
+    // the usable need not always be on the left
     const k = Math.floor(this.rng.next() * cards.length);
     [cards[0], cards[k]] = [cards[k], cards[0]];
     return cards;
@@ -2322,6 +2529,11 @@ export class Run {
     this.choices = null;
     this.pending = Math.max(0, this.pending - 1);
     if ('item' in c) {
+      // a usable swapped: the old one goes, and the new one is ready at once
+      if (c.swap) {
+        this.items.delete(c.swap);
+        this.useCooldown = 0;
+      }
       this.items.set(c.item, c.level);
       // a new pip of composure comes filled
       if (c.item === 'composure') this.gafoop.composure = Math.min(this.composureMax, this.gafoop.composure + 1);
@@ -2335,10 +2547,10 @@ export class Run {
   }
 
   /** The words on a card. */
-  static describe(c: Card): { name: string; lines: [string, string]; level: number; max: number; who: string; kind: string } {
-    if ('extra' in c) return { name: EXTRAS[c.extra].name, lines: EXTRAS[c.extra].lines, level: 0, max: 0, who: '', kind: '' };
+  static describe(c: Card): { name: string; lines: [string, string]; level: number; max: number; who: string; kind: string; swap: string } {
+    if ('extra' in c) return { name: EXTRAS[c.extra].name, lines: EXTRAS[c.extra].lines, level: 0, max: 0, who: '', kind: '', swap: '' };
     const def = ITEMS[c.item];
-    return { name: def.name, lines: def.lines[c.level - 1], level: c.level, max: def.max, who: def.who, kind: def.kind };
+    return { name: def.name, lines: def.lines[c.level - 1], level: c.level, max: def.max, who: def.who, kind: def.kind, swap: c.swap ? ITEMS[c.swap].name : '' };
   }
 
   // ------------------------------------------------------------------ the end

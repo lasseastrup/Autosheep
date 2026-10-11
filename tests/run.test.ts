@@ -140,14 +140,14 @@ describe('the run', () => {
     expect(r.flockCentre().x - f0.x).toBeGreaterThan(1.5);
   });
 
-  test('holding the bucket does nothing without a Feed Bucket; with one, the flock comes to him', () => {
+  test('holding the button does nothing without a usable; with the feed bucket, the flock comes to him', () => {
     const call = (bucket: boolean) => {
       const r = run();
       if (bucket) r.items.set('bucket', 1);
       const f0 = r.flockCentre();
       r.gafoop.x = r.gafoop.px = f0.x + 8;
       r.gafoop.y = r.gafoop.py = f0.y;
-      r.input.bucket = true;
+      r.input.use = true;
       steps(r, 6 / r.dt);
       const f = r.flockCentre();
       return Math.hypot(f.x - r.gafoop.x, f.y - r.gafoop.y);

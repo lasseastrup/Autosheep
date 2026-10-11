@@ -11,7 +11,7 @@ export const W = 640;
 export const H = 360;
 
 export type RunButton =
-  | 'card0' | 'card1' | 'card2' | 'supply' | 'bucket' | 'pause' | 'start' | 'resume' | 'quit'
+  | 'card0' | 'card1' | 'card2' | 'supply' | 'use' | 'pause' | 'start' | 'resume' | 'quit'
   | 'opt:cushion' | 'opt:grazing' | 'opt:levelups' | 'perf' | 'stress' | 'zoomIn' | 'zoomOut';
 
 export interface Rect { id: RunButton; x: number; y: number; w: number; h: number }
@@ -25,8 +25,8 @@ export interface RunLayout {
   choosing: boolean;
   /** banked level-ups waiting to be opened */
   supplies: number;
-  /** Gafoop has a feed bucket (on a phone it gets a button) */
-  bucket: boolean;
+  /** Gafoop has a usable (on a phone it gets a button) */
+  use: boolean;
   perf: boolean;
 }
 
@@ -44,7 +44,7 @@ export function runButtons(L: RunLayout): Rect[] {
     }
     b.push({ id: 'pause', x: W - 30, y: 58, w: 24, h: 18 });
     if (L.supplies > 0) b.push({ id: 'supply', x: W / 2 - 70, y: H - 46, w: 140, h: 22 });
-    if (L.touch && L.bucket) b.push({ id: 'bucket', x: W - 70, y: H - 70, w: 64, h: 64 });
+    if (L.touch && L.use) b.push({ id: 'use', x: W - 70, y: H - 70, w: 64, h: 64 });
     if (L.touch) b.push({ id: 'zoomOut', x: 6, y: H - 30, w: 26, h: 24 }, { id: 'zoomIn', x: 36, y: H - 30, w: 26, h: 24 });
     if (L.perf) b.push({ id: 'stress', x: 6, y: 92, w: 110, h: 13 });
     return b;
@@ -76,9 +76,11 @@ export type Fx =
   | { kind: 'zap'; ax: number; ay: number; bx: number; by: number; age: number; life: number; seed: number }
   | { kind: 'crook'; x: number; y: number; angle: number; arc: number; r: number; age: number; life: number }
   /** a word slammed down over the field: the stamp's APPROVED, a WOOF!, a PUNCHED */
-  | { kind: 'stamp'; x: number; y: number; age: number; life: number; label?: string; color?: string };
+  | { kind: 'stamp'; x: number; y: number; age: number; life: number; label?: string; color?: string }
+  /** a column of light standing on the ground (the tractor beam) */
+  | { kind: 'column'; x: number; y: number; age: number; life: number; color: string };
 
-export interface Card { name: string; lines: [string, string]; level: number; max: number; who: string; kind: string }
+export interface Card { name: string; lines: [string, string]; level: number; max: number; who: string; kind: string; swap: string }
 
 export interface RunHudState {
   layout: RunLayout;
@@ -111,7 +113,10 @@ export interface RunHudState {
   options: RunOptions;
   result: { won: boolean; held: number; peak: number; level: number; kills: number; found: number; rescued: number; lost: number; time: number } | null;
   stick: { ox: number; oy: number; x: number; y: number } | null;
-  bucketOn: boolean;
+  /** the button is down */
+  useOn: boolean;
+  /** the usable: its button's name, held or tapped, its level, and how ready it is (1: ready) */
+  use: { name: string; button: string; hold: boolean; level: number; max: number; ready: number } | null;
   held: ReadonlySet<RunButton>;
   perf: { fps: number; ms: number; calls: number; tris: number; sheep: number; enemies: number } | null;
   /** seconds since the run began (the help strip fades) */
@@ -125,14 +130,15 @@ export interface RunHudState {
 const CODES: Record<ItemId, string> = {
   stamp: 'STAMP', stapler: 'STAPL', shredder: 'SHRED', crook: 'CROOK', planes: 'PLANE', tape: 'TAPE', punch: 'PUNCH',
   cabinet: 'FILES', bells: 'BELLS', static: 'ZAP', rams: 'RAMS', tags: 'TAGS', flak: 'FLAK',
-  bucket: 'BUCKT', whistle: 'WHSTL', woof: 'WOOF', collie: 'DOG', lick: 'LICK', decoys: 'DECOY', drone: 'DRONE',
+  collie: 'DOG', bucket: 'BUCKT', whistle: 'WHSTL', woof: 'WOOF', lick: 'LICK', decoys: 'DECOY', hurdle: 'HURDL', beam: 'BEAM',
+  drone: 'DRONE',
   disc: 'DISC', medal: 'MEDAL', expedite: 'QUICK', triplicate: 'TRIPL', cap: 'CAP', composure: 'NERVE', vacuum: 'VACUM',
   expense: 'EXPNS', shears: 'SHEAR', fleece: 'FLEEC', merino: 'WOOL', calm: 'CALM', lambs: 'LAMBS', stubborn: 'STUBN',
   homing: 'HOME',
 };
 
 /** The HUD's colour for each kind of item. */
-const KIND_COLOR: Record<ItemKind, string> = { armament: C.straw, tool: C.skyLight, provision: C.mint };
+const KIND_COLOR: Record<ItemKind, string> = { armament: C.straw, usable: C.skyLight, provision: C.mint };
 
 const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
@@ -186,7 +192,7 @@ function drawTop(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
   f.title.draw(g, String(s.flock), cx - 12, 20, { color: C.white, shadow: C.black });
   f.tiny.draw(g, 'SHEEP', cx + 44, 34, { color: C.fog, align: 'right' });
   if (s.taken > 0) f.small.draw(g, `${s.taken} BEING TAKEN`, cx, 42, { color: C.scarlet, align: 'center' });
-  // composure and what Gafoop carries: armaments, tools, provisions, a row each
+  // composure and what Gafoop carries: armaments and provisions a row each, then the usable
   const px = W - 146;
   panel(g, px, 11, 140, 41, { fill: C.ink, border: s.ko > 0 ? C.gold : C.lilac });
   for (let k = 0; k < s.composureMax; k++) {
@@ -202,11 +208,22 @@ function drawTop(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
     f.tiny.draw(g, CODES[it.id], x + 1, y, { color: KIND_COLOR[it.kind] });
     for (let l = 0; l < it.max; l++) rect(g, x + 1 + l * 4, y + 7, 3, 1, l < it.level ? C.white : C.stone);
   };
-  (['armament', 'tool', 'provision'] as ItemKind[]).forEach((kind, row) => {
+  (['armament', 'provision'] as ItemKind[]).forEach((kind, row) => {
     const have = s.items.filter((i) => i.kind === kind);
-    const n = kind === 'tool' ? 3 : 5;
-    for (let k = 0; k < n; k++) slot(have[k], px + 4 + k * 27, 25 + row * 9);
+    for (let k = 0; k < 5; k++) slot(have[k], px + 4 + k * 27, 25 + row * 9);
   });
+  // the usable: its name, level, and a bar filling up as it gets ready again
+  const u = s.use;
+  const uy = 43;
+  rect(g, px + 4, uy, 134, 8, u ? C.coal : C.black);
+  if (!u) {
+    f.tiny.draw(g, 'NO USABLE YET', px + 6, uy, { color: C.stone });
+    return;
+  }
+  const ready = u.ready >= 1;
+  if (!ready) rect(g, px + 4, uy + 7, Math.round(134 * u.ready), 1, C.skyLight);
+  f.tiny.draw(g, `${u.button}${s.layout.touch ? '' : u.hold ? '  HOLD [SPACE]' : '  [SPACE]'}`, px + 6, uy, { color: ready ? C.skyLight : C.stone });
+  for (let l = 0; l < u.max; l++) rect(g, px + 122 + l * 4, uy + 3, 3, 2, l < u.level ? C.white : C.stone);
 }
 
 function arrowHead(g: CanvasRenderingContext2D, x: number, y: number, angle: number, color: string): void {
@@ -314,6 +331,14 @@ function drawFx(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
         px = x;
         py = y;
       }
+    } else if (e.kind === 'column') {
+      const base = s.toScreen(e.x, e.y);
+      const top = s.toScreen(e.x, e.y, 9);
+      const w = Math.max(1, Math.round(4 * (1 - k)));
+      g.globalAlpha = 1 - k * 0.7;
+      rect(g, Math.round(base.x) - w, Math.round(top.y), w * 2 + 1, Math.round(base.y - top.y), e.color);
+      rect(g, Math.round(base.x), Math.round(top.y), 1, Math.round(base.y - top.y), C.white);
+      g.globalAlpha = 1;
     } else if (e.kind === 'crook') {
       const c = s.toScreen(e.x, e.y);
       const r = e.r * s.ppm * (0.7 + 0.3 * k);
@@ -361,7 +386,7 @@ function drawCards(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void 
     if (!c) return;
     const down = s.held.has(b.id);
     const isNew = c.level === 1;
-    const kind = c.kind === 'armament' ? 'ARMAMENT ' : c.kind === 'tool' ? 'TOOL ' : c.kind === 'provision' ? 'PROVISION ' : '';
+    const kind = c.kind === 'armament' ? 'ARMAMENT ' : c.kind === 'usable' ? 'USABLE ' : c.kind === 'provision' ? 'PROVISION ' : '';
     const who = kind + (c.who === 'flock' ? 'FOR THE FLOCK' : c.who === 'gafoop' ? 'FOR GAFOOP' : c.who === 'booths' ? 'FOR THE BOOTHS' : 'FROM THE BUREAU');
     const accent = c.who === 'flock' ? C.mint : c.who === 'gafoop' ? C.straw : c.who === 'booths' ? C.skyLight : C.pinkLight;
     panel(g, b.x, b.y + (down ? 1 : 0), b.w, b.h, { fill: down ? C.coal : C.ink, border: accent, accent });
@@ -372,7 +397,9 @@ function drawCards(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void 
     lines.forEach((l, i) => f.small.draw(g, l, b.x + 8, y + 24 + i * 10, { color: C.white }));
     const ly = y + 24 + lines.length * 10 + 4;
     if (c.max > 0) {
-      f.small.draw(g, isNew ? 'NEW!' : `LEVEL ${c.level}`, b.x + 8, ly, { color: isNew ? C.gold : C.lime });
+      const tag = c.swap ? `SWAPS OUT THE ${c.swap}` : isNew ? 'NEW!' : `LEVEL ${c.level}`;
+      if (c.swap) f.tiny.draw(g, tag, b.x + 8, ly + 1, { color: C.gold });
+      else f.small.draw(g, tag, b.x + 8, ly, { color: isNew ? C.gold : C.lime });
       for (let l = 0; l < c.max; l++) rect(g, b.x + 8 + l * 7, ly + 11, 5, 3, l < c.level ? (l === c.level - 1 ? C.gold : C.white) : C.stone);
     }
     c.lines.forEach((line, i) => {
@@ -391,8 +418,8 @@ function drawHelp(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
     ? ['TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD']
     : [
       L.touch
-        ? L.bucket ? 'DRAG TO FLY  -  HOLD THE BUCKET AND THE FLOCK FOLLOWS' : 'DRAG TO FLY'
-        : L.bucket ? 'WASD OR MOUSE: FLY   HOLD CLICK OR SPACE: THE BUCKET   ESC: PAUSE' : 'WASD OR MOUSE: FLY   ESC: PAUSE',
+        ? s.use ? `DRAG TO FLY  -  ${s.use.hold ? 'HOLD' : 'TAP'} ${s.use.button}` : 'DRAG TO FLY'
+        : s.use ? `WASD OR MOUSE: FLY   ${s.use.hold ? 'HOLD ' : ''}SPACE OR CLICK: ${s.use.button}   ESC: PAUSE` : 'WASD OR MOUSE: FLY   ESC: PAUSE',
       'SHEEP MOVE AWAY FROM YOU. HERD WOOLLY ONES INTO A SHEARING BOOTH',
     ];
   const bottom = H - (L.touch ? 79 : 7);
@@ -420,15 +447,18 @@ function drawControls(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): vo
       const blink = Math.floor(s.playing * 3) % 2 === 0;
       panel(g, b.x, b.y + dy, b.w, b.h, { fill: down ? C.coal : C.ink, border: blink ? C.gold : C.straw, shadow: down ? null : C.black });
       f.small.draw(g, `SUPPLY DROP x${L.supplies}${L.touch ? '' : '  [E]'}`, cx, b.y + 7 + dy, { color: C.gold, align: 'center' });
-    } else if (b.id === 'bucket') {
-      const on = s.bucketOn;
-      panel(g, b.x, b.y + dy, b.w, b.h, { fill: on || down ? C.coal : C.ink, border: on ? C.lime : C.straw, shadow: down ? null : C.black });
-      rect(g, cx - 7, b.y + 15 + dy, 14, 14, C.black);
-      rect(g, cx - 6, b.y + 16 + dy, 12, 12, on ? C.mist : C.fog);
-      rect(g, cx - 6, b.y + 16 + dy, 12, 2, C.straw);
-      rect(g, cx - 5, b.y + 10 + dy, 10, 1, C.lilac);
-      f.small.draw(g, 'BUCKET', cx, b.y + 40 + dy, { color: on ? C.lime : C.straw, align: 'center' });
-      f.tiny.draw(g, 'HOLD', cx, b.y + 51 + dy, { color: C.fog, align: 'center' });
+    } else if (b.id === 'use' && s.use) {
+      // the usable: its name, HOLD or TAP, and a fill rising while it gets ready again
+      const u = s.use;
+      const on = s.useOn && (u.hold || down);
+      const ready = u.ready >= 1;
+      panel(g, b.x, b.y + dy, b.w, b.h, { fill: on || down ? C.coal : C.ink, border: !ready ? C.stone : on ? C.lime : C.skyLight, shadow: down ? null : C.black });
+      if (!ready) {
+        const fill = Math.round((b.h - 4) * u.ready);
+        rect(g, b.x + 2, b.y + b.h - 2 - fill + dy, b.w - 4, fill, C.navy);
+      }
+      f.small.draw(g, u.button, cx, b.y + 24 + dy, { color: !ready ? C.fog : on ? C.lime : C.skyLight, align: 'center' });
+      f.tiny.draw(g, ready ? (u.hold ? 'HOLD' : 'TAP') : 'WAIT', cx, b.y + 37 + dy, { color: C.fog, align: 'center' });
     } else if (b.id === 'zoomIn' || b.id === 'zoomOut') {
       panel(g, b.x, b.y + dy, b.w, b.h, { fill: down ? C.coal : C.ink, border: C.lilac, shadow: down ? null : C.black });
       f.small.draw(g, b.id === 'zoomIn' ? '+' : '-', cx, b.y + 8 + dy, { color: C.straw, align: 'center' });
@@ -481,7 +511,7 @@ function drawMenu(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
     f.huge.draw(g, 'PAUSED', W / 2, top + 8, { color: C.white, align: 'center', shadow: C.black });
     const lines = [
       'SHEEP MOVE AWAY FROM GAFOOP: HERD THEM FROM BEHIND.',
-      'TOOLS (A FEED BUCKET, A WHISTLE, A COLLIE) HELP.',
+      'YOUR ONE USABLE ITEM (A BUCKET, A WHISTLE...) IS ON SPACE.',
       'WOOLLY SHEEP IN A BOOTH\'S RING ARE CALLED IN AND SHORN,',
       'ONE AT A TIME. THE WOOL IS EXPERIENCE, BUT A SHORN',
       'SHEEP HAS NO FLEECE TO TAKE A GRAB FOR IT.',

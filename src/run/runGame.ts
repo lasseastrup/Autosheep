@@ -19,7 +19,7 @@ import { KIND, Phase } from './enemies';
 import { Run, Sheep, type RunEvent } from './run';
 import type { RunAudio } from './runAudio';
 import { buttonAt, drawRunHud, H, runButtons, W, type Fx, type RunButton, type RunHudState, type RunLayout, type Screen } from './runHud';
-import { BoothView, CabinetView, CollieView, DecoyView, DroneView, GearView, GloopView, LickView, PickupView, PlaneView, SaucerView } from './runViews';
+import { BoothView, CabinetView, CollieView, DecoyView, DroneView, GearView, GloopView, HurdleView, LickView, PickupView, PlaneView, SaucerView } from './runViews';
 
 const OPTIONS_KEY = 'autosheep.survivors.options';
 
@@ -42,12 +42,15 @@ const BARKS: Record<string, string[]> = {
   final: ['One minute to the hearing! Hold on to them!'],
   scatter: ['Stop panicking! I am a very calm alien!', 'No, no, the OTHER way!'],
   // the first time each item comes
-  'got:bucket': ['A feed bucket! Hold SPACE, or a mouse button, and they come running.'],
-  'got:whistle': ['A dog whistle. Dogs love these, I am told.'],
-  'got:woof': ['The Woof-Woof 3000. I am a dog now.'],
+  // usables: {HOLD} and {PRESS} say how, on a keyboard or on a phone
+  'got:bucket': ['A feed bucket! {HOLD} and they come running.'],
+  'got:whistle': ['A dog whistle! {PRESS} to blow it. Dogs love these, I am told.'],
+  'got:woof': ['The Woof-Woof 3000! {PRESS} to bark. I am a dog now.'],
+  'got:lick': ['Salt licks! {PRESS} to drop one. They go mad for them.'],
+  'got:decoys': ['Inflatable sheep! {PRESS} to drop one. Practically indistinguishable.'],
+  'got:hurdle': ['A portable hurdle! {PRESS} to put it down across my path.'],
+  'got:beam': ['Blorp, beam me up a sheep! {PRESS} to beam a taken one home.'],
   'got:collie': ['A clockwork collie! Good boy. Good brass boy.'],
-  'got:lick': ['Salt licks. The sheep go mad for them.'],
-  'got:decoys': ['Inflatable sheep. Practically indistinguishable.'],
   'got:drone': ['A Bureau shearing drone. Licensed and everything.'],
   'got:planes': ['Paper planes! Form 77-B, folded for speed.'],
   'got:tape': ['Red tape. Nothing gets through red tape.'],
@@ -58,10 +61,7 @@ const BARKS: Record<string, string[]> = {
   'got:flak': ['Exploding fleece. Do not ask where the Bureau got it.'],
   'got:lambs': ['Lambing season! More troops.'],
 };
-/** On a phone the bucket has a button rather than a key. */
-const TOUCH_BARKS: Record<string, string[]> = {
-  'got:bucket': ['A feed bucket! Hold BUCKET and they come running.'],
-};
+
 
 export interface RunGameInput {
   keys: Set<string>;
@@ -71,7 +71,7 @@ export interface RunGameInput {
   /** the mouse, in overlay pixels (Gafoop flies toward it); null off the canvas or on touch */
   pointer: { x: number; y: number } | null;
   /** a mouse button is held: the bucket */
-  mouseBucket: boolean;
+  mouseUse: boolean;
   /** a thumb steering: where it went down and where it is now (overlay pixels) */
   stick: { ox: number; oy: number; x: number; y: number } | null;
 }
@@ -106,12 +106,13 @@ export class RunGame {
   private readonly lickView: LickView;
   private readonly collieView: CollieView;
   private readonly droneView: DroneView;
+  private readonly hurdleView: HurdleView;
   private readonly puffs = new PuffSystem(600);
   run!: Run;
   screen: Screen = 'title';
   options: RunOptions;
   audio: RunAudio | null = null;
-  readonly input: RunGameInput = { keys: new Set(), hits: [], wheel: 0, pointer: null, mouseBucket: false, stick: null };
+  readonly input: RunGameInput = { keys: new Set(), hits: [], wheel: 0, pointer: null, mouseUse: false, stick: null };
   readonly held = new Set<RunButton>();
   /** show on-screen controls (set once the player touches the screen) */
   touch = false;
@@ -178,8 +179,9 @@ export class RunGame {
     this.lickView = new LickView(2);
     this.collieView = new CollieView(2);
     this.droneView = new DroneView(2);
+    this.hurdleView = new HurdleView(2);
     s.add(this.boothView.root, this.gloops.root, this.saucers.root, this.pickups.root, this.gear.root, this.puffs.mesh);
-    s.add(this.planeView.root, this.cabinetView.root, this.decoyView.root, this.lickView.root, this.collieView.root, this.droneView.root);
+    s.add(this.planeView.root, this.cabinetView.root, this.decoyView.root, this.lickView.root, this.collieView.root, this.droneView.root, this.hurdleView.root);
 
     this.options = loadOptions();
     this.cam.zoomIndex = 1;
@@ -281,7 +283,7 @@ export class RunGame {
     const g = run.gafoop;
     const gx = lerp(g.px, g.x, alpha);
     const gz = lerp(g.py, g.y, alpha);
-    this.gafoop.tool = run.input.bucket && run.lvl('bucket') > 0 ? 'bucket' : 'idle';
+    this.gafoop.tool = run.input.use && run.usable === 'bucket' ? 'bucket' : 'idle';
     this.gafoop.place(gx, gz, g.vx, g.vy, dt, this.wall);
     // knocked out: he spins; hit: he blinks
     this.gafoop.root.rotation.z = g.ko > 0 ? Math.sin(this.wall * 9) * 0.35 : 0;
@@ -299,6 +301,7 @@ export class RunGame {
     this.lickView.update(run);
     this.collieView.update(run, alpha, this.wall, dt);
     this.droneView.update(run, alpha, this.wall);
+    this.hurdleView.update(run, this.wall);
     this.puffs.update(this.wall);
     for (const [i, b] of this.blinkers.entries()) b.visible = Math.floor(this.wall * 1.5 + i * 0.5) % 2 === 0;
 
@@ -398,7 +401,7 @@ export class RunGame {
     }
     this.run.input.move.x = mx;
     this.run.input.move.y = mz;
-    this.run.input.bucket = inp.mouseBucket || k.has(' ') || this.held.has('bucket');
+    this.run.input.use = inp.mouseUse || k.has(' ') || this.held.has('use');
   }
 
   /** Per sheep: out of sight, off the ground, struggling, tipped over to be shorn. */
@@ -585,6 +588,21 @@ export class RunGame {
           this.float(e.x, e.y, 1.4, '+1 LAMB', C.lime);
           a?.lamb();
           break;
+        case 'hurdle':
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.3, e.y), 8, { color: [C.khaki, C.tan], size: 0.18, speed: 1.6, life: 0.5, up: 0.6 });
+          a?.hurdle(this.pan(e.x, e.y));
+          break;
+        case 'beamed':
+          this.fx.push({ kind: 'column', x: e.ax, y: e.ay, age: 0, life: 0.5, color: C.ice });
+          this.fx.push({ kind: 'column', x: e.bx, y: e.by, age: 0, life: 0.7, color: C.ice });
+          this.puffs.burst(this.wall, this.tmp.set(e.bx, 1, e.by), 10, { color: [C.ice, C.mint, C.white], size: 0.16, speed: 1.6, life: 0.6, up: 1 });
+          this.float(e.bx, e.by, 1.8, 'BEAMED HOME', C.ice);
+          a?.beamed();
+          break;
+        case 'fizzle':
+          this.float(e.x, e.y, 2.2, e.id === 'beam' ? 'NOTHING TO BEAM' : 'NO FLOCK TO CALL', C.fog);
+          a?.fizzle();
+          break;
         case 'kick':
           this.float(o.x[e.sheep], o.y[e.sheep], 1.6, 'KICKED FREE!', C.lime);
           a?.freed(this.pan(o.x[e.sheep], o.y[e.sheep]));
@@ -604,9 +622,15 @@ export class RunGame {
   private say(what: string, delay: number, again = false): void {
     if (!again && this.said.has(what)) return;
     this.said.add(what);
-    const list = (this.touch ? TOUCH_BARKS[what] : undefined) ?? BARKS[what];
+    const list = BARKS[what];
     if (!list) return;
-    this.gafoop.say(list[this.quip++ % list.length], this.wall + delay, 3);
+    // how to work the usable: a key, or its button on a phone
+    const id = this.run.usable;
+    const button = id ? ITEMS[id].button ?? 'IT' : 'IT';
+    const line = list[this.quip++ % list.length]
+      .replace('{HOLD}', this.touch ? `Hold ${button}` : 'Hold SPACE')
+      .replace('{PRESS}', this.touch ? `Tap ${button}` : 'Press SPACE');
+    this.gafoop.say(line, this.wall + delay, 3.5);
   }
 
   private timedBarks(): void {
@@ -628,6 +652,16 @@ export class RunGame {
       this.lastScatter = this.wall;
       this.say('scatter', 0, true);
     }
+  }
+
+  /** The usable for the HUD: which, held or tapped, and how ready (1: ready). */
+  private useState(): RunHudState['use'] {
+    const run = this.run;
+    const id = run.usable;
+    if (!id) return null;
+    const def = ITEMS[id];
+    const ready = def.hold || run.useCooldown <= 0 ? 1 : 1 - run.useCooldown / run.useCooldownOf;
+    return { name: def.name, button: def.button ?? def.name, hold: !!def.hold, level: run.lvl(id), max: def.max, ready };
   }
 
   /** The share of the flock with a fleece worth taking to a booth. */
@@ -664,7 +698,7 @@ export class RunGame {
       touch: this.touch,
       choosing: this.screen === 'play' && this.run.choices !== null,
       supplies: this.screen === 'play' && this.run.options.levelups === 'bank' && !this.run.choices ? this.run.pending : 0,
-      bucket: this.run.lvl('bucket') > 0,
+      use: this.run.usable !== null,
       perf: this.showPerf,
     };
   }
@@ -718,7 +752,7 @@ export class RunGame {
         this.input.wheel += 1;
         break;
       case 'perf':
-      case 'bucket':
+      case 'use':
         break;
     }
   }
@@ -884,7 +918,8 @@ export class RunGame {
         ? { won: run.over === 'won', held: run.flockCount, peak: run.stats.peak, level: run.level, kills: run.stats.kills, found: run.stats.found, rescued: run.stats.rescued, lost: run.stats.lost, time: run.time }
         : null,
       stick: this.touch ? this.input.stick : null,
-      bucketOn: run.input.bucket,
+      useOn: run.input.use,
+      use: this.useState(),
       held: this.held,
       perf: this.showPerf ? { ...this.perf, sheep: run.flockCount, enemies: run.enemies.countOf() } : null,
       playing: this.playing,

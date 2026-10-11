@@ -1,24 +1,26 @@
 /**
- * What level-ups offer (plan §8.4): three kinds of item, for Gafoop, for the flock or for the
+ * What level-ups offer (plan §8.6): three kinds of item, for Gafoop, for the flock or for the
  * shearing booths.
  *
- * - **Armaments** do damage: Gafoop's stationery, and gear the flock wears. Five slots, to level 6.
- * - **Tools** are gadgets that work on the flock and the field rather than on monsters: the feed
- *   bucket (the only one with a button), a whistle, a clockwork collie, decoys. Three slots, to
- *   level 4.
- * - **Provisions** are passive: faster, harder, wider, woollier. Five slots, to level 4.
+ * - **Armaments** work by themselves and do damage: Gafoop's stationery, and gear the flock
+ *   wears (the clockwork collie among it). Five slots, to level 6.
+ * - **The usable** is the one item the player works, with the one button: held (the feed
+ *   bucket) or tapped, then ready again after a cooldown. One at a time; a card for another one
+ *   swaps it. To level 4.
+ * - **Provisions** are passive: faster, harder, wider, woollier, and the shearing drone. Five
+ *   slots, to level 4.
  */
-export type ItemKind = 'armament' | 'tool' | 'provision';
+export type ItemKind = 'armament' | 'usable' | 'provision';
 
 export type ItemId =
   // armaments
   | 'stamp' | 'stapler' | 'shredder' | 'crook' | 'planes' | 'tape' | 'punch' | 'cabinet'
-  | 'bells' | 'static' | 'rams' | 'tags' | 'flak'
-  // tools
-  | 'bucket' | 'whistle' | 'woof' | 'collie' | 'lick' | 'decoys' | 'drone'
+  | 'bells' | 'static' | 'rams' | 'tags' | 'flak' | 'collie'
+  // usables
+  | 'bucket' | 'whistle' | 'woof' | 'lick' | 'decoys' | 'hurdle' | 'beam'
   // provisions
   | 'disc' | 'medal' | 'expedite' | 'triplicate' | 'cap' | 'composure' | 'vacuum' | 'expense'
-  | 'shears' | 'fleece' | 'merino' | 'calm' | 'lambs' | 'stubborn' | 'homing';
+  | 'shears' | 'drone' | 'fleece' | 'merino' | 'calm' | 'lambs' | 'stubborn' | 'homing';
 
 export interface ItemDef {
   id: ItemId;
@@ -29,13 +31,17 @@ export interface ItemDef {
   max: number;
   /** the card's two lines: what it does when new, then what each next level adds */
   lines: [string, string][];
+  /** a usable that works while the button is held (the bucket), rather than tapped */
+  hold?: boolean;
+  /** a usable's name on its button */
+  button?: string;
 }
 
-export const SLOTS: Record<ItemKind, number> = { armament: 5, tool: 3, provision: 5 };
+export const SLOTS: Record<ItemKind, number> = { armament: 5, usable: 1, provision: 5 };
 
 type Def = Omit<ItemDef, 'id'>;
 const arm = (who: ItemDef['who'], name: string, lines: [string, string][]): Def => ({ kind: 'armament', who, name, max: 6, lines });
-const tool = (who: ItemDef['who'], name: string, lines: [string, string][]): Def => ({ kind: 'tool', who, name, max: 4, lines });
+const use = (who: ItemDef['who'], name: string, button: string, lines: [string, string][], hold = false): Def => ({ kind: 'usable', who, name, max: 4, lines, button, hold });
 const prov = (who: ItemDef['who'], name: string, lines: [string, string][]): Def => ({ kind: 'provision', who, name, max: 4, lines });
 /** later levels' cards: one line each */
 const more = (...s: string[]): [string, string][] => s.map((l) => [l, ''] as [string, string]);
@@ -56,14 +62,15 @@ const DEFS: Record<ItemId, Def> = {
   rams: arm('flock', 'RAM HORNS', [['2 SHEEP GROW HORNS AND BUTT', 'WHATEVER COMES TOO CLOSE'], ...more('3 RAMS', '5 RAMS, HARDER', '7 RAMS', '10 RAMS, HARDER', '14 RAMS, AND THEY BUTT SOONER')]),
   tags: arm('flock', 'EAR-TAG ZAPPERS', [['TAGGED SHEEP ZAP ANYTHING', 'THAT GRABS THEM'], ...more('HARDER', 'HARDER, SOONER', 'A ZAP MAY DEPORT THE GRABBER', 'DEPORTS MORE OFTEN', 'DEPORTS MOST OF THE TIME')]),
   flak: arm('flock', 'FLEECE FLAK', [['TORN FLEECES BURST, AND SHEEP', 'IN A PANIC SHED TUFTS THAT POP'], ...more('BIGGER BURSTS', 'HARDER', 'MORE TUFTS', 'BIGGER AND HARDER', 'EVERY STAMPEDE IS A BARRAGE')]),
-  // ---- tools
-  bucket: tool('gafoop', 'FEED BUCKET', [['HOLD THE BUCKET AND THE FLOCK', 'COMES TO GAFOOP, AND FOLLOWS'], ...more('CALLS FROM FURTHER', 'FURTHER, AND THEY HURRY', 'CALLS FROM HALF THE FIELD')]),
-  whistle: tool('gafoop', 'DOG WHISTLE', [['NOW AND THEN THE WHOLE FLOCK', 'RUNS BACK TOGETHER'], ...more('MORE OFTEN', 'MORE OFTEN, FROM FURTHER', 'OFTEN, AND FROM ANYWHERE')]),
-  woof: tool('gafoop', 'WOOF-WOOF 3000', [['A BARK THAT BLOWS MONSTERS', 'BACK (IT STARTLES THE SHEEP)'], ...more('WIDER, SOONER', 'TRAINED: THE SHEEP STAY CALM', 'WIDER, SOONER, DIZZIER')]),
-  collie: tool('flock', 'CLOCKWORK COLLIE', [['A BRASS DOG CIRCLES THE FLOCK', 'BITING MONSTERS, BUNCHING SHEEP'], ...more('BITES HARDER', 'FASTER AND HARDER', 'A SECOND COLLIE')]),
-  lick: tool('flock', 'SALT LICK', [['GAFOOP DROPS SALT LICKS: THE', 'FLOCK GATHERS ROUND, GROWS WOOL'], ...more('LASTS LONGER', 'MORE OFTEN, MORE WOOL', 'TWO AT A TIME')]),
-  decoys: tool('flock', 'INFLATABLE SHEEP', [['DECOYS BY THE FLOCK DRAW', 'GLOOPS, AND BURST WHEN GRABBED'], ...more('3 AT A TIME', 'A BIGGER BANG', '5 AT A TIME')]),
-  drone: tool('booths', 'SHEARING DRONE', [['A BUREAU DRONE SHEARS FULL', 'FLEECES IN THE FLOCK, SLOWLY'], ...more('FASTER', 'FASTER STILL', 'A SECOND DRONE')]),
+  collie: arm('flock', 'CLOCKWORK COLLIE', [['A BRASS DOG CIRCLES THE FLOCK', 'BITING MONSTERS, BUNCHING SHEEP'], ...more('BITES HARDER', 'FASTER AND HARDER', 'A SECOND COLLIE', 'FASTER AND HARDER', 'THEY BITE MUCH HARDER')]),
+  // ---- usables: one at a time, on the button
+  bucket: use('gafoop', 'FEED BUCKET', 'BUCKET', [['HOLD IT: THE FLOCK COMES TO', 'GAFOOP, AND FOLLOWS HIM'], ...more('CALLS FROM FURTHER', 'FURTHER, AND THEY HURRY', 'CALLS FROM HALF THE FIELD')], true),
+  whistle: use('gafoop', 'DOG WHISTLE', 'WHISTLE', [['BLOW IT: THE WHOLE FLOCK RUNS', 'BACK TOGETHER'], ...more('READY SOONER', 'SOONER, AND HEARD FURTHER', 'HEARD FROM ANYWHERE')]),
+  woof: use('gafoop', 'WOOF-WOOF 3000', 'WOOF', [['BARK: MONSTERS ARE BLOWN BACK', 'AND LET GO (THE SHEEP JUMP TOO)'], ...more('WIDER, SOONER', 'TRAINED: THE SHEEP STAY CALM', 'WIDER, SOONER, DIZZIER')]),
+  lick: use('flock', 'SALT LICK', 'LICK', [['DROP A SALT LICK: THE FLOCK', 'GATHERS ROUND, GROWS WOOL'], ...more('LASTS LONGER', 'SOONER, AND MORE WOOL', 'TWO LICKS AT ONCE')]),
+  decoys: use('flock', 'INFLATABLE SHEEP', 'DECOY', [['DROP A DECOY SHEEP: GLOOPS GO', 'FOR IT FIRST, AND IT BURSTS'], ...more('3 AT A TIME', 'A BIGGER BANG', '5 AT A TIME')]),
+  hurdle: use('gafoop', 'PORTABLE HURDLE', 'HURDLE', [['DROP A HURDLE ACROSS YOUR WAY:', 'NO SHEEP OR GLOOP GETS THROUGH'], ...more('LONGER, AND IT LASTS LONGER', 'TWO AT ONCE', 'ELECTRIFIED')]),
+  beam: use('gafoop', 'TRACTOR BEAM', 'BEAM', [['BLORP BEAMS A TAKEN SHEEP OR', 'A STRAGGLER BACK TO THE FLOCK'], ...more('READY SOONER, REACHES FURTHER', 'SOONER STILL', 'TWO SHEEP AT A TIME')]),
   // ---- provisions: Gafoop
   disc: prov('gafoop', 'TURBO DISC', more('GAFOOP FLIES 10% FASTER', '20% FASTER', '30% FASTER', '40% FASTER')),
   medal: prov('gafoop', 'MEDAL OF EXCESSIVE MERIT', more('EVERYTHING HITS 10% HARDER', '20% HARDER', '30% HARDER', '40% HARDER')),
@@ -75,6 +82,7 @@ const DEFS: Record<ItemId, Def> = {
   expense: prov('gafoop', 'EXPENSE ACCOUNT', [['10% MORE EXPERIENCE', 'FROM EVERYTHING'], ...more('20% MORE', '30% MORE', '40% MORE')]),
   // ---- provisions: the booths and the flock
   shears: prov('booths', 'ELECTRIC SHEARS', [['BOOTHS AND DRONES SHEAR', '30% FASTER'], ...more('60% FASTER', '90% FASTER', '120% FASTER')]),
+  drone: prov('booths', 'SHEARING DRONE', [['A BUREAU DRONE SHEARS FULL', 'FLEECES IN THE FLOCK, SLOWLY'], ...more('FASTER', 'FASTER STILL', 'A SECOND DRONE')]),
   fleece: prov('flock', 'THICK FLEECE', [['SHEEP ARE CARRIED SLOWER, AND', 'THEIR WOOL CUSHIONS SOONER'], ...more('SLOWER STILL', 'SLOWER STILL', 'SLOWER STILL')]),
   merino: prov('flock', 'MERINO GENES', [['WOOL GROWS 20% FASTER', 'MORE EXPERIENCE FROM THE FLOCK'], ...more('40% FASTER', '60% FASTER', '80% FASTER')]),
   calm: prov('flock', 'CALM DISPOSITION', [['FRIGHT SLOWS THE WOOL', 'A QUARTER LESS'], ...more('HALF AS MUCH', 'THREE QUARTERS LESS', 'FRIGHT COSTS NO WOOL AT ALL')]),
@@ -94,7 +102,8 @@ export const EXTRAS: Record<Extra, { name: string; lines: [string, string] }> = 
   salvage: { name: 'BAG OF SALVAGE', lines: ['A THIRD OF A LEVEL', 'OF EXPERIENCE'] },
 };
 
-export type Card = { item: ItemId; level: number } | { extra: Extra };
+/** A card: an item's next level (`swap`: the usable it would replace), or an extra. */
+export type Card = { item: ItemId; level: number; swap?: ItemId } | { extra: Extra };
 
 const pick = <T>(table: readonly T[], level: number): T => table[Math.max(0, Math.min(table.length - 1, level - 1))];
 
@@ -113,11 +122,14 @@ export const STATS = {
   rams: (l: number) => ({ rams: pick([2, 3, 5, 7, 10, 14], l), every: pick([1.6, 1.6, 1.5, 1.5, 1.3, 1.0], l), damage: pick([8, 10, 13, 15, 19, 24], l), reach: 1.4, knock: 3 }),
   tags: (l: number) => ({ every: pick([0.8, 0.8, 0.65, 0.65, 0.6, 0.5], l), damage: pick([6, 8, 10, 12, 14, 18], l), deport: pick([0, 0, 0, 0.15, 0.25, 0.4], l) }),
   flak: (l: number) => ({ damage: pick([15, 18, 24, 26, 32, 40], l), radius: pick([2.2, 2.5, 2.5, 2.7, 3.0, 3.2], l), tufts: pick([1, 1, 2, 3, 4, 6], l), every: 1 }),
-  bucket: (l: number) => ({ radius: pick([12, 15, 18, 26], l), strength: pick([1.0, 1.05, 1.2, 1.25], l) }),
-  whistle: (l: number) => ({ cooldown: pick([10, 8.5, 7, 6], l), radius: pick([22, 24, 30, 60], l), lasts: 2.5, strength: 1.2 }),
-  woof: (l: number) => ({ cooldown: pick([6, 5.5, 5, 4], l), radius: pick([4, 4.6, 4.8, 5.6], l), knock: pick([4, 4.5, 5, 6], l), dizzy: pick([0.8, 0.8, 1, 1.4], l), damage: 3, startle: l < 3 }),
-  collie: (l: number) => ({ collies: l >= 4 ? 2 : 1, speed: pick([7, 7, 8.5, 8.5], l), damage: pick([10, 14, 18, 18], l), every: 0.6, reach: 0.9, push: { strength: 0.45, radius: 4 } }),
-  lick: (l: number) => ({ cooldown: pick([18, 18, 14, 14], l), lasts: pick([10, 14, 14, 16], l), radius: pick([10, 11, 12, 13], l), strength: 0.9, wool: pick([0.25, 0.25, 0.6, 0.75], l), count: l >= 4 ? 2 : 1 }),
-  decoys: (l: number) => ({ cooldown: pick([9, 8, 7, 6], l), most: pick([2, 3, 3, 5], l), damage: pick([20, 26, 40, 45], l), radius: pick([2.5, 2.5, 3.0, 3.2], l), lasts: 20 }),
+  collie: (l: number) => ({ collies: l >= 4 ? 2 : 1, speed: pick([7, 7, 8.5, 8.5, 9.5, 10], l), damage: pick([10, 14, 18, 18, 22, 28], l), every: 0.6, reach: 0.9, push: { strength: 0.45, radius: 4 } }),
+  // usables: `cooldown` is how long after one use the next is ready
+  bucket: (l: number) => ({ cooldown: 0, radius: pick([12, 15, 18, 26], l), strength: pick([1.0, 1.05, 1.2, 1.25], l) }),
+  whistle: (l: number) => ({ cooldown: pick([12, 10, 8, 6], l), radius: pick([24, 28, 34, 60], l), lasts: 3, strength: 1.3 }),
+  woof: (l: number) => ({ cooldown: pick([8, 7, 6, 5], l), radius: pick([5, 5.6, 6.2, 7], l), knock: pick([4.5, 5, 5.5, 6.5], l), dizzy: pick([1, 1, 1.3, 1.6], l), damage: 4, startle: l < 3 }),
+  lick: (l: number) => ({ cooldown: pick([16, 14, 12, 10], l), lasts: pick([12, 15, 15, 18], l), radius: pick([10, 11, 12, 13], l), strength: 0.9, wool: pick([0.25, 0.25, 0.6, 0.75], l), count: l >= 4 ? 2 : 1 }),
+  decoys: (l: number) => ({ cooldown: pick([7, 6, 5, 4], l), most: pick([2, 3, 3, 5], l), damage: pick([20, 26, 40, 45], l), radius: pick([2.5, 2.5, 3.0, 3.2], l), lasts: 20 }),
+  hurdle: (l: number) => ({ cooldown: pick([8, 7, 6, 5], l), length: pick([4, 5.5, 5.5, 6.5], l), lasts: pick([15, 20, 20, 24], l), count: l >= 3 ? 2 : 1, shock: l >= 4 ? 8 : 0 }),
+  beam: (l: number) => ({ cooldown: pick([20, 16, 13, 11], l), range: pick([16, 22, 26, 30], l), count: l >= 4 ? 2 : 1, straggler: 9 }),
   drone: (l: number) => ({ drones: l >= 4 ? 2 : 1, shear: pick([6, 5, 4, 4], l), least: 0.9, speed: 6 }),
 };

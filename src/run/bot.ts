@@ -1,6 +1,9 @@
 import { RUN } from './config';
 import { Sheep, type Booth, type Run } from './run';
-import { ITEMS } from './items';
+import { ITEMS, STATS, type ItemId } from './items';
+
+/** The usables the bot knows when to use (it has no hands for a bucket or a hurdle). */
+const KNOWS: ItemId[] = ['whistle', 'woof', 'lick', 'decoys', 'beam'];
 
 interface Group { n: number; x: number; y: number }
 
@@ -11,7 +14,7 @@ interface Group { n: number; x: number; y: number }
  * outside it; drive a straggling group back to the flock; when the flock is woolly, drive it
  * into the nearest shearing booth's mouth and keep it there while it is shorn; fetch strays when
  * it is quiet; otherwise circle the flock. Level-ups go to armaments first, the flock's gear
- * included.
+ * included, then a usable it knows when to press (whistle, bark, lick, decoy, beam).
  */
 export class Bot {
   /** the booth the flock is being driven to, and when the trip is given up */
@@ -28,13 +31,77 @@ export class Bot {
   drive(): void {
     const r = this.run;
     if (r.choices) {
-      // armaments first, then tools (not the bucket: it has no hands for one), then the rest
-      const rank = (c: (typeof r.choices)[number]) => ('item' in c ? (ITEMS[c.item].kind === 'armament' ? 0 : c.item === 'bucket' ? 3 : ITEMS[c.item].kind === 'tool' ? 1 : 2) : 4);
+      // armaments first, then a usable it knows how to use (and it keeps the one it has), then the rest
+      const rank = (c: (typeof r.choices)[number]) => {
+        if (!('item' in c)) return 5;
+        if (c.swap) return 6;
+        const kind = ITEMS[c.item].kind;
+        return kind === 'armament' ? 0 : kind === 'usable' ? (KNOWS.includes(c.item) ? 1 : 4) : 2;
+      };
       let k = 0;
       r.choices.forEach((c, q) => { if (rank(c) < rank(r.choices![k])) k = q; });
       r.choose(k);
     }
     if (r.options.levelups === 'bank' && r.pending > 0) r.openSupplies();
+    this.steer();
+    r.input.use = this.wantsToUse();
+  }
+
+  /** The button: a fresh press when the usable would help (and is ready). */
+  private wantsToUse(): boolean {
+    const r = this.run;
+    const id = r.usable;
+    if (!id || r.useCooldown > 0 || r.input.use || r.gafoop.ko > 0) return false;
+    const g = r.gafoop;
+    const e = r.enemies;
+    const o = r.model.out;
+    const near = (x: number, y: number, d: number) => {
+      let n = 0;
+      for (let i = 0; i < e.high; i++) if (e.alive[i] && Math.hypot(e.x[i] - x, e.y[i] - y) < d) n++;
+      return n;
+    };
+    let main: Group = { n: 0, x: g.x, y: g.y };
+    for (const grp of this.groups.values()) if (grp.n > main.n) main = grp;
+    switch (id) {
+      case 'woof': {
+        const S = STATS.woof(r.lvl('woof'));
+        if (near(g.x, g.y, S.radius - 0.5) < 2) return false;
+        if (!S.startle) return true;
+        // untrained, it frightens the sheep too (and frightened sheep grow no wool): not by
+        // the flock, unless it would free a sheep being taken
+        let calm = true;
+        for (let j = 0; j < r.n; j++) {
+          const d = Math.hypot(o.x[j] - g.x, o.y[j] - g.y);
+          if ((r.status[j] === Sheep.Grabbed || r.status[j] === Sheep.Carried) && d < S.radius - 0.5) return true;
+          if (r.status[j] === Sheep.Flock && d < S.radius + 2) calm = false;
+        }
+        return calm;
+      }
+      case 'beam': {
+        const reach = STATS.beam(r.lvl('beam')).range;
+        for (let j = 0; j < r.n; j++) {
+          const s = r.status[j];
+          if (s !== Sheep.Grabbed && s !== Sheep.Carried && s !== Sheep.Beamed) continue;
+          const d = Math.hypot(o.x[j] - g.x, o.y[j] - g.y);
+          if (d > 6 && d < reach) return true;
+        }
+        return false;
+      }
+      case 'whistle':
+        for (const grp of this.groups.values()) if (grp !== main && grp.n >= 2 && Math.hypot(grp.x - main.x, grp.y - main.y) > 10) return true;
+        return false;
+      case 'lick':
+        return this.mode === 'circle' && Math.hypot(g.x - main.x, g.y - main.y) < 9;
+      case 'decoys':
+        return near(main.x, main.y, 10) >= 2 && Math.hypot(g.x - main.x, g.y - main.y) < 9;
+      default:
+        return false;
+    }
+  }
+
+  /** Where to fly. */
+  private steer(): void {
+    const r = this.run;
     const g = r.gafoop;
     const o = r.model.out;
     // a sheep being taken comes first
@@ -47,7 +114,7 @@ export class Bot {
       if (d < bd) { bd = d; best = j; }
     }
     this.mode = 'rescue';
-    if (best >= 0) return this.go(o.x[best], o.y[best], 1, false);
+    if (best >= 0) return this.go(o.x[best], o.y[best], 1);
     // the flock's groups: the biggest is the flock, any other is straggling
     const groups = this.findGroups();
     let main: Group = { n: 0, x: g.x, y: g.y };
@@ -66,7 +133,7 @@ export class Bot {
     if (ne >= 0) {
       const ux = (e.x[ne] - main.x) / (nd || 1);
       const uy = (e.y[ne] - main.y) / (nd || 1);
-      return this.go(e.x[ne] + ux, e.y[ne] + uy, 1, false);
+      return this.go(e.x[ne] + ux, e.y[ne] + uy, 1);
     }
     // a group strayed from the flock: drive it back
     this.mode = 'gather';
@@ -97,13 +164,13 @@ export class Bot {
     this.mode = 'strays';
     if (strays.length && r.time > 20) {
       const s = strays.reduce((a, b) => (Math.hypot(a.x - g.x, a.y - g.y) < Math.hypot(b.x - g.x, b.y - g.y) ? a : b));
-      return this.go(s.x, s.y, 1, false);
+      return this.go(s.x, s.y, 1);
     }
     // circle the flock, outside its flight zone
     this.mode = 'circle';
     this.orbit += r.dt * 0.25;
     const ring = spread(main) + RUN.presence.radius + 2;
-    this.go(main.x + Math.cos(this.orbit) * ring, main.y + Math.sin(this.orbit) * ring, 0.6, false);
+    this.go(main.x + Math.cos(this.orbit) * ring, main.y + Math.sin(this.orbit) * ring, 0.6);
   }
 
   /**
@@ -127,16 +194,16 @@ export class Bot {
       // round the outside, a little at a time
       const a = want + off - Math.sign(off) * 0.7;
       const ring = spread(grp) + RUN.presence.radius + 1;
-      return this.go(grp.x + Math.cos(a) * ring, grp.y + Math.sin(a) * ring, 1, false);
+      return this.go(grp.x + Math.cos(a) * ring, grp.y + Math.sin(a) * ring, 1);
     }
-    this.go(grp.x - ux * back, grp.y - uy * back, 0.35, false);
+    this.go(grp.x - ux * back, grp.y - uy * back, 0.35);
   }
 
   /** Keep group `grp` where it is, leaning toward (tx, ty): stand off behind it, still. */
   private hold(grp: Group, tx: number, ty: number): void {
     const d = Math.hypot(tx - grp.x, ty - grp.y) || 1;
     const back = spread(grp) + RUN.presence.radius;
-    this.go(grp.x - ((tx - grp.x) / d) * back, grp.y - ((ty - grp.y) / d) * back, 0.3, false);
+    this.go(grp.x - ((tx - grp.x) / d) * back, grp.y - ((ty - grp.y) / d) * back, 0.3);
   }
 
   /** The flock's connected groups: how many sheep and where (the model's group ids). */
@@ -171,8 +238,8 @@ export class Bot {
     return n;
   }
 
-  /** Fly toward (tx, ty) at up to `pace` of full speed, the bucket held or not. */
-  private go(tx: number, ty: number, pace: number, bucket: boolean): void {
+  /** Fly toward (tx, ty) at up to `pace` of full speed. */
+  private go(tx: number, ty: number, pace: number): void {
     const r = this.run;
     const g = r.gafoop;
     const dx = tx - g.x;
@@ -181,7 +248,6 @@ export class Bot {
     const k = d > 0.5 ? Math.min(pace, d / 3) / d : 0;
     r.input.move.x = dx * k;
     r.input.move.y = dy * k;
-    r.input.bucket = bucket;
   }
 }
 

@@ -1,6 +1,8 @@
-// Screenshots of the run's items at work: Gafoop given a spread of armaments, tools and
+// Screenshots of the run's items at work: Gafoop given a spread of armaments, a usable and
 // provisions, the harness's bot flying him; and a level-up's cards.
 //   node tools/items-shot.mjs <outDir> [seconds]
+//   ITEMS='{"planes":3,...}' (what he has), CLOSE=1 (close up, him parked; with TOUCH=1 as on a
+//   phone, PRESS=1 to press the usable every other shot)
 // Needs `npm run build:single` first (or URL=...).
 import { chromium } from 'playwright-core';
 import fs from 'node:fs';
@@ -8,7 +10,7 @@ import fs from 'node:fs';
 const [outDir, secondsArg = '40'] = process.argv.slice(2);
 const seconds = Number(secondsArg);
 const url = process.env.URL ?? `file://${process.cwd()}/dist-single/index.html?game&manual&scale=2`;
-const items = JSON.parse(process.env.ITEMS ?? '{"stamp":3,"planes":3,"tape":3,"cabinet":3,"rams":3,"collie":2,"decoys":2,"drone":2,"lick":2,"woof":2}');
+const items = JSON.parse(process.env.ITEMS ?? '{"stamp":3,"planes":3,"tape":3,"cabinet":3,"rams":3,"collie":2,"drone":2,"woof":2}');
 fs.mkdirSync(outDir, { recursive: true });
 const browser = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium',
@@ -36,7 +38,7 @@ await shot('00-cards');
 await page.evaluate(() => window.__game.game.run.choose(0));
 // close up: the flock at rest, Gafoop beside it with the items, a clump of Gloops coming in
 if (process.env.CLOSE) {
-  await page.evaluate((items) => {
+  await page.evaluate(([items, touch]) => {
     const g = window.__game.game;
     const r = g.run;
     r.time = 120;
@@ -46,11 +48,17 @@ if (process.env.CLOSE) {
     r.gafoop.x = r.gafoop.px = f.x + 4;
     r.gafoop.y = r.gafoop.py = f.y + 2;
     g.cam.zoomIndex = 2;
+    // TOUCH=1: as on a phone (the usable's button on screen)
+    if (touch) g.touch = true;
     for (let k = 0; k < 7; k++) r.enemies.spawn('gloop', f.x + 9 + (k % 3), f.y - 6 + Math.floor(k / 3), 1);
     r.enemies.spawn('bigGloop', f.x - 9, f.y + 4, 1);
-  }, items);
+  }, [items, !!process.env.TOUCH]);
   for (let k = 1; k <= 10; k++) {
-    await tick(24);
+    // PRESS=1: the usable's button goes down every other shot
+    if (process.env.PRESS && k % 2 === 0) await page.evaluate(() => window.__game.game.buttonDown('use'));
+    await tick(12);
+    await page.evaluate(() => window.__game.game.buttonUp('use'));
+    await tick(12);
     await page.evaluate(() => { const r = window.__game.game.run; if (r.choices) r.choose(0); });
     await shot(`close-${String(k).padStart(2, '0')}`);
   }

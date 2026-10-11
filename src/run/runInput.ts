@@ -5,7 +5,7 @@ import type { RunGame } from './runGame';
 /**
  * Mouse, touch and keys for the survivors run. A mouse steers Gafoop by hovering and holds the
  * bucket with a button; a finger that goes down anywhere but on a button is a stick, centred
- * where it went down, so one thumb flies while the other holds BUCKET; keys fly with WASD.
+ * where it went down, so one thumb flies while the other works the usable's button; keys fly with WASD.
  */
 export function wireRunInput(game: RunGame, el: HTMLCanvasElement): void {
   const inp = game.input;
@@ -30,7 +30,7 @@ export function wireRunInput(game: RunGame, el: HTMLCanvasElement): void {
     if (e.pointerType === 'mouse') {
       roles.set(e.pointerId, 'mouse');
       inp.pointer = p;
-      inp.mouseBucket = (e.buttons & 3) !== 0;
+      inp.mouseUse = (e.buttons & 3) !== 0;
     } else {
       roles.set(e.pointerId, 'stick');
       inp.stick = { ox: p.x, oy: p.y, x: p.x, y: p.y };
@@ -49,7 +49,7 @@ export function wireRunInput(game: RunGame, el: HTMLCanvasElement): void {
     roles.delete(e.pointerId);
     if (r === 'stick') inp.stick = null;
     else if (r && r !== 'mouse') game.buttonUp(r);
-    if (e.pointerType === 'mouse') inp.mouseBucket = (e.buttons & 3) !== 0 && r === 'mouse';
+    if (e.pointerType === 'mouse') inp.mouseUse = (e.buttons & 3) !== 0 && r === 'mouse';
   };
   window.addEventListener('pointerup', up);
   window.addEventListener('pointercancel', up);
@@ -68,7 +68,7 @@ export function wireRunInput(game: RunGame, el: HTMLCanvasElement): void {
   }, { passive: false });
   window.addEventListener('blur', () => {
     inp.keys.clear();
-    inp.mouseBucket = false;
+    inp.mouseUse = false;
     inp.stick = null;
     for (const r of roles.values()) if (r !== 'stick' && r !== 'mouse') game.buttonUp(r);
     roles.clear();

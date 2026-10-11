@@ -130,6 +130,22 @@ export class RunAudio extends GameAudio {
     sfx.poof(this.a, this.t + 0.02, { vol: 0.5, pitch: 1.4, pan });
   }
 
+  hurdle(pan: number): void {
+    if (!this.ok('hurdle', 0.2)) return;
+    sfx.thud(this.a, this.t, { vol: 0.5, pitch: 1.2, pan });
+    sfx.typeBlip(this.a, this.t + 0.05, { vol: 0.3, pitch: 0.7, pan });
+  }
+
+  beamed(): void {
+    if (!this.ok('beamed', 0.2)) return;
+    sfx.holoOn(this.a, this.t, { vol: 0.4 });
+    sfx.sparkle(this.a, this.t + 0.2, { pitch: 1.4, vol: 0.4 });
+  }
+
+  fizzle(): void {
+    if (this.ok('fizzle', 0.4)) sfx.beep(this.a, this.t, { pitch: 0.5, vol: 0.25, dur: 0.15 });
+  }
+
   lamb(): void {
     sfx.bleat(this.a, this.t, { vol: 0.6, pitch: 1.6, len: 0.35 });
   }

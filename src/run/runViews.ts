@@ -665,3 +665,53 @@ export class DroneView {
     });
   }
 }
+
+/** Portable hurdles: wattle fences on stakes, and electric ones that crackle. */
+export class HurdleView {
+  readonly root = new THREE.Group();
+  private readonly pool: { g: THREE.Group; rails: THREE.Mesh[]; posts: THREE.Mesh[] }[] = [];
+  private readonly plain = toon(C.khaki);
+  private readonly live = toon(C.gold, { emissive: C.amber, emissiveIntensity: 0.6 });
+
+  constructor(cap: number) {
+    const post = toon(C.rust);
+    for (let k = 0; k < cap; k++) {
+      // along +x: rails a metre long, stretched to the hurdle, and posts spread along it
+      const g = new THREE.Group();
+      const rails: THREE.Mesh[] = [];
+      const posts: THREE.Mesh[] = [];
+      for (const y of [0.35, 0.65, 0.95]) {
+        const r = mesh(new THREE.BoxGeometry(1, 0.08, 0.06), this.plain, [0, y, 0]);
+        rails.push(r);
+        g.add(r);
+      }
+      for (let q = 0; q < 5; q++) {
+        const p = mesh(new THREE.BoxGeometry(0.1, 1.15, 0.1), post, [0, 0.55, 0]);
+        posts.push(p);
+        g.add(p);
+      }
+      castShadows(g, true, false);
+      g.visible = false;
+      this.root.add(g);
+      this.pool.push({ g, rails, posts });
+    }
+  }
+
+  update(run: Run, time: number): void {
+    const h = run.hurdles;
+    const electric = ITEM_STATS.hurdle(Math.max(1, run.lvl('hurdle'))).shock > 0 && run.lvl('hurdle') > 0;
+    this.pool.forEach((v, k) => {
+      v.g.visible = k < h.cap && h.alive[k] === 1;
+      if (!v.g.visible) return;
+      const len = Math.hypot(h.bx[k] - h.ax[k], h.by[k] - h.ay[k]);
+      // up out of the ground when put down, back into it at the end
+      const up = Math.min(1, h.age[k] / 0.2, h.life[k] / 0.4);
+      v.g.position.set((h.ax[k] + h.bx[k]) / 2, (up - 1) * 1.2, (h.ay[k] + h.by[k]) / 2);
+      v.g.rotation.y = -Math.atan2(h.by[k] - h.ay[k], h.bx[k] - h.ax[k]);
+      for (const r of v.rails) r.scale.x = len;
+      v.posts.forEach((p, q) => (p.position.x = (q / (v.posts.length - 1) - 0.5) * len));
+      const spark = electric && Math.floor(time * 12 + k) % 3 === 0;
+      for (const r of v.rails) r.material = spark ? this.live : this.plain;
+    });
+  }
+}

@@ -1,6 +1,6 @@
 # AUTOSHEEP: SURVIVORS — pivot plan
 
-*Branch `claude/survivors-pivot` · October 2026 · proposal; S0 built (§11.1) and changed after the first playtests (§11.2, §11.3)*
+*Branch `claude/survivors-pivot` · October 2026 · proposal; S0 built (§11.1) and changed after the first playtests (§11.2–§11.4)*
 
 > **Nobody touches my sheep.** A survivors-like (Vampire Survivors, Brotato, Halls of Torment)
 > in which the thing you are keeping alive is not you but a growing flock. Every grabby species
@@ -41,7 +41,7 @@ The name can stay: in this genre the *auto* is the weapons.
 |---|---|---|
 | Fantasy | Build a civilisation around sheep | Be the sheepdog: keep the flock together under attack |
 | Session | One persistent valley, hours | Runs of 15–20 minutes, then a between-runs shop and unlocks |
-| Gafoop | Harmless, leads with a bucket, builds | Fights with auto-firing stationery; herds by proximity, as a sheepdog; the bucket is one of the tools he can find (§8.6) |
+| Gafoop | Harmless, leads with a bucket, builds | Fights with auto-firing stationery; herds by proximity, as a sheepdog; the bucket is one of the usables he can find, and he carries one at a time (§8.6) |
 | Shearing | By hand, then in sheds the player builds | Only in the Bureau's shearing booths on the map: the flock is herded in |
 | The flock | A logistics layer | The health bar, the XP engine and a weapon platform |
 | Threats | Light hazards only | Waves of alien claim-jumpers who take sheep (never harm them) |
@@ -312,10 +312,11 @@ regions. Each region is a stage with its own claimants and boss.
 Gafoop moves with one stick (or WASD). **His presence is felt**, as it was in the valley before
 the Woof-Woof: sheep move off as he comes, more the faster he closes, and settle once he keeps
 his distance. So he herds from behind, as a sheepdog does, and a careless flight through the
-flock scatters it. **Tools** (§8.6) help with the rest: the feed bucket (the one item with a
-button: while it is held he is mostly forgiven, and sheep within the call radius come to him
-and follow at a walk), a dog whistle that calls the flock back together, a clockwork collie
-that circles it, salt licks it gathers at. So a run has two
+flock scatters it. **Items** (§8.6) help with the rest, above all his one **usable**, the item
+on his button: the feed bucket (while it is held he is mostly forgiven, and sheep within the
+call radius come to him and follow at a walk), a dog whistle that calls the flock back
+together, a salt lick it gathers at, a hurdle that turns it. A clockwork collie, an armament,
+circles it and so bunches it. So a run has two
 rhythms: **guarding** (flock parked on grass, Gafoop circling it, which also keeps it bunched)
 and **droving** (moving the flock to a shearing booth, fresh grass, a stray or away from a boss,
 slower and more exposed). They are the two jobs real sheepdogs alternate, collecting stragglers
@@ -373,7 +374,7 @@ the S0 meadow): a raised board under a canopy, with a ring on the grass at its m
 with at least a third of a fleece that stands in the ring is called up onto the board, shorn
 and let off at the side, **one at a time** (a second and a bit each), and its wool flies to
 Gafoop. Getting the flock there is the work: drive it in from behind, or call it with the
-bucket, then keep the monsters off while the queue goes through. A sheep on the board is out of
+bucket if that is his usable, then keep the monsters off while the queue goes through. A sheep on the board is out of
 reach of grabbers and saucers.
 
 A shorn sheep has no cushion (§5.2) until its fleece is back past half, so every trip trades
@@ -428,8 +429,10 @@ white flock always reads.
   spinning cap): weapons stop and the flock is on its own. Being surrounded therefore still
   matters, without a second fail state.
 - **Presence**: sheep move off as he comes (§5.1); he herds by where he flies.
-- **The bucket**, once he has found one (a tool, §8.6): hold to call (§5.1). On a phone: stick on
-  the left thumb, BUCKET on the right, as the valley's FEED button already works.
+- **The button**: his usable (§8.6), once he has found one. The bucket is held (§5.1); the
+  others are pressed, and then take a few seconds to be ready again. On a phone: stick on the
+  left thumb, the usable's button on the right (BUCKET, WHISTLE...), as the valley's FEED
+  button already works.
 - **Pickup reach**: the radius in which salvage and tufts fly to him (the genre's magnet stat).
 
 ---
@@ -552,17 +555,19 @@ Blorp names it in a bark. A sheep is never lost to something the player could no
 ### 8.2 The choice
 
 - Pick one of **three** cards (four with enough Bureau Connections, the luck stat).
-- Cards come from: new items for empty slots, the next level of owned items. Rarer items are
-  weighted down; luck evens the odds.
+- Cards come from: new items for empty slots, the next level of owned items, and swaps for the
+  one usable (§8.6). Rarer items are weighted down; luck evens the odds.
 - **Reroll, skip and banish** charges are bought between runs, not given (genre standard).
 - When everything is maxed, the cards are *+3 sheep*, *restore composure* and *a bag of salvage*.
 - Phone layout: three large cards across the bottom half, big enough for a thumb.
 
 ### 8.3 Slots
 
-**Five armaments + three tools + five provisions.** Armaments are anything that does damage,
-whether Gafoop carries it or the flock wears it; tools are gadgets that work on the flock and
-the field instead (§8.6); provisions are passive stats, for Gafoop, the flock or the booths.
+**Five armaments + one usable + five provisions.** Armaments are anything that does damage
+by itself, whether Gafoop carries it or the flock wears it; the usable is the one item on his
+button, a gadget he sets off when he chooses (§8.6); provisions are passive stats, for Gafoop,
+the flock or the booths. One usable keeps the controls to one stick and one button, and makes
+which one a decision for the whole run.
 Sharing the slots between Gafoop and the herd is deliberate: every pick is a choice between
 building up yourself and building up the flock. Armaments go to level 6, provisions to level 4,
 so a run cannot max everything and the picks matter. (The genre's six and six, with weapons to
@@ -621,13 +626,17 @@ Elites drop crates. A crate holds one upgrade, sometimes three or five (luck). F
 a crate can hold an evolution if its recipe is met (a maxed armament plus its provision). Some
 crates hold sheep instead.
 
-### 8.6 What S0 has: 35 items in three kinds
+### 8.6 What S0 has: 37 items in three kinds
 
-From the second playtest note (§11.3): nothing is Gafoop's from the start but the stamp; the
-feed bucket, like everything else, comes from a level-up card, and the catalogue is wide
-enough that no two runs build alike. Cards say what kind an item is and whom it is for.
-Until Gafoop has a tool, one card in three is a tool; the next level of something he holds is
-four times as likely as anything new (`src/run/items.ts`, `deal` in `src/run/run.ts`).
+From the second and third playtest notes (§11.3, §11.4): nothing is Gafoop's from the start but
+the stamp; the feed bucket, like everything else, comes from a level-up card, and the catalogue
+is wide enough that no two runs build alike. Cards say what kind an item is and whom it is for.
+The next level of something he holds is four times as likely as anything new. Until Gafoop has
+a usable, one card in three is a usable; once he has one, the others come as **swaps** ("swaps
+out the feed bucket"), a tenth as likely as a next level and never more than one a deal (with
+little else left to offer, the extras fill in rather than forcing a swap): the new one starts at
+level 1, ready at once, and the old one goes with its levels (`src/run/items.ts`, `deal` in
+`src/run/run.ts`).
 
 | Armaments (5 slots, to level 6) | What it does |
 |---|---|
@@ -644,16 +653,17 @@ four times as likely as anything new (`src/run/items.ts`, `deal` in `src/run/run
 | Ram Horns (flock) | Some sheep grow horns and butt what comes too close |
 | Ear-Tag Zappers (flock) | Whatever grabs a sheep is zapped until it lets go; later levels may deport it outright |
 | Fleece Flak (flock) | A torn fleece bursts; sheep in a panic shed tufts that pop |
+| Clockwork Collie (flock) | A brass dog circles the flock (a little push, so it bunches it) and bites monsters at it; two at level 4 |
 
-| Tools (3 slots, to level 4) | What it does |
-|---|---|
-| Feed Bucket | The one with a button: hold it and the flock comes to Gafoop and follows (his push mostly forgiven) |
-| Dog Whistle | Now and then the flock is called back to its middle: stragglers come running |
-| Woof-Woof 3000 | A bark that blows monsters back, dizzy, and makes grabbers let go; startles the sheep until level 3 |
-| Clockwork Collie | A brass dog circles the flock (a little push, so it bunches it) and bites monsters at it; two at level 4 |
-| Salt Lick | Dropped where Gafoop is when he is by the flock: it gathers round, and grows wool faster there |
-| Inflatable Sheep | Decoys at the flock's edge that Gloops go for first; they burst with a bang |
-| Shearing Drone | A Bureau drone that shears full fleeces in the open, slowly, one sheep at a time |
+| Usables (1 slot, to level 4) | On the button | Ready again after |
+|---|---|---|
+| Feed Bucket | Hold it: the flock comes to Gafoop and follows (his push mostly forgiven) | (held) |
+| Dog Whistle | The whole flock is called to its middle for 3 s: stragglers come running | 12 → 6 s |
+| Woof-Woof 3000 | A bark round Gafoop that blows monsters back, dizzy, and makes grabbers let go; startles the sheep until level 3 | 8 → 5 s |
+| Salt Lick | Dropped where Gafoop is: the flock gathers round it, and grows wool faster there; two at level 4 | 16 → 10 s |
+| Inflatable Sheep | A decoy where Gafoop is, which Gloops go for first; it bursts with a bang; up to 2, 3, then 5 | 7 → 4 s |
+| Portable Hurdle | Dropped across his way, centred on him: no sheep or Gloop gets through (Gloops go round, carriers stop); 4 → 6.5 m, 15 → 24 s, two standing from level 3, electrified at 4 | 8 → 5 s |
+| Tractor Beam | Blorp beams the sheep being taken nearest Gafoop (16 → 30 m) back to the flock's middle, its grabbers stunned; with none, the worst straggler; two at level 4 | 20 → 11 s |
 
 | Provisions (5 slots, to level 4) | What it does |
 |---|---|
@@ -664,6 +674,7 @@ four times as likely as anything new (`src/run/items.ts`, `deal` in `src/run/run
 | Vacuum Attachment | Picks things up from further away |
 | Expense Account | More experience from everything |
 | Electric Shears (booths) | Booths and drones shear faster |
+| Shearing Drone (booths) | A Bureau drone that shears full fleeces in the open, slowly, one sheep at a time; two at level 4 |
 | Thick Fleece, Merino Genes (flock) | Carried slower and cushioned sooner; wool grows faster |
 | Calm Disposition (flock) | Fright costs less wool |
 | Lambing Season (flock) | A calm flock has lambs |
@@ -783,7 +794,7 @@ The contract (`src/sim/contract.ts`) gains what the run needs, and nothing reach
 
 | Milestone | Goal | Exit criteria |
 |---|---|---|
-| **S0: Find the fun** 🟡 built (§11.1), changed after the first playtest (§11.2) | Greybox in the existing engine: the meadow, 8 sheep, Gafoop with the stamp and the stapler, Gloops and saucers, grabbing and rescue, wool as experience, a level-up screen with about eight items, strays, a 10-minute run, lose at zero sheep. Two builds, bucket-to-lead and always-follow; toggles for the wool cushion (§5.2), grazing (§5.5) and banked level-ups (§8.1) | Testers ask for another run; protecting feels like being a sheepdog, not babysitting; every lost sheep was seen being lost; it runs at 50 fps on a phone with 100 sheep and 150 enemies |
+| **S0: Find the fun** 🟡 built (§11.1), changed after the first playtests (§11.2–§11.4) | Greybox in the existing engine: the meadow, 8 sheep, Gafoop with the stamp and the stapler, Gloops and saucers, grabbing and rescue, wool as experience, a level-up screen with about eight items, strays, a 10-minute run, lose at zero sheep. Two builds, bucket-to-lead and always-follow; toggles for the wool cushion (§5.2), grazing (§5.5) and banked level-ups (§8.1) | Testers ask for another run; protecting feels like being a sheepdog, not babysitting; every lost sheep was seen being lost; it runs at 50 fps on a phone with 100 sheep and 150 enemies |
 | **S1: Stage 1** | The Valley as a full 15-minute stage: timeline and director, six archetypes, 8 armaments, 10 provisions, 3 evolutions, crates, elites, the Repo Mothership, the hearing, grazing (if S0 kept it), contract v2, the run harness, an effects-opacity setting | A full run on an iPhone at ≥ 50 fps with 150 sheep and 200 enemies; harness graphs show a level-up every 15–25 s early and every 40–60 s late; median first run ends after minute 8 |
 | **S2: Between runs** | Wool banking, the Requisition Catalogue, Forms as unlocks, three breeds, a second character, the Almanac, appeal court and the Tax Inspector | A new player meets a new item or breed in each of their first ten runs |
 | **S3: The story** | The revised intro (new lines, the saucer and crate beats), hearing cutscenes per stage, barks for every first meeting, music that layers with the pressure | The intro hands over into the first run with no menu in between |
@@ -802,9 +813,9 @@ the controls). What is in it:
 | Gafoop with the stamp and the stapler | The stamp to start with; the stapler, shredder and crook as level-ups; composure (three pips, a knockout) |
 | Gloops and saucers, grabbing and rescue | Both, plus a big Gloop (minutes 5 and 8) that carries alone and drops a crate. One Gloop pins a sheep, three carry it; carriers head over the nearest wall; deport or hook them and it drops back. The take cap (one in eight) |
 | Wool as experience | Four shearing booths that take woolly sheep in one at a time (§5.4; Gafoop sheared full fleeces as he passed until the first playtest), salvage from kills, one bar |
-| About eight items | Thirty-five in three kinds (§8.6): thirteen armaments (eight of Gafoop's stationery, five of the flock's gear), seven tools including the feed bucket, fifteen provisions; five, three and five slots |
+| About eight items | Thirty-seven in three kinds (§8.6): fourteen armaments (eight of Gafoop's stationery, six of the flock's gear), seven usables including the feed bucket, sixteen provisions; five slots, one and five |
 | A 10-minute run, lose at zero sheep | The minute table and the director (§7.2) over ten minutes, the hearing at 10:00 |
-| Two builds: bucket-to-lead and always-follow | One build with the test settings on the title, pause and results screens: wool cushion, grazing, banked level-ups (a lead-mode setting went with the first playtest: Gafoop's proximity moves the flock; the bucket became a tool to find with the second) |
+| Two builds: bucket-to-lead and always-follow | One build with the test settings on the title, pause and results screens: wool cushion, grazing, banked level-ups (a lead-mode setting went with the first playtest: Gafoop's proximity moves the flock; the bucket became an item to find with the second, and one usable among seven with the third) |
 
 Not in S0: evolutions, robot wolves, shearlings and bailiffs (S1), the revised intro (S3; the
 intro still tells the old story), meta-progression (S2).
@@ -873,6 +884,8 @@ that rule from random directions.
 
 ### 11.3 After the second playtest note
 
+(The tools below became usables, one at a time, with the third note: §11.4.)
+
 **"The feed bucket should go; instead the player unlocks items (such as the bucket). Make a
 good bunch of different items that do a wide variety of things."** In:
 
@@ -899,6 +912,49 @@ takes only full fleeces and takes six seconds over each.
 "Unlock" here means found in a run. Unlocks between runs, where items join the pool as Forms
 are filed (§9.3), are S2's; with thirty-five items a playtest sees plenty without them.
 
+### 11.4 After the third playtest note
+
+**"So some items are usable like the bucket was? Yes, but the player can only have one usable
+at a time."** In:
+
+- The items that want a hand are **usables** now, and Gafoop carries one (§8.3, §8.6): the feed
+  bucket, the dog whistle, the Woof-Woof, the salt lick and the inflatable sheep, which went off
+  by themselves on timers before, and two new ones, a **portable hurdle** and Blorp's **tractor
+  beam**. The bucket is held as before. The others are pressed when the player chooses, and are
+  then ready again after 4–20 s (shorter at higher levels, and with Expedited Processing).
+- The two tools that need no hand moved: the clockwork collie is an armament (to level 6, a
+  second collie at 4) and the shearing drone a provision.
+- **One slot, swaps.** Until Gafoop has a usable, one card in three is one; then the others
+  come now and then as swap cards (SWAPS OUT THE FEED BUCKET), one a deal at most. The new one
+  starts at level 1, ready at once, and the old one goes with its levels, so changing is a real
+  cost and the first pick matters. A level-4 bucket for a level-1 beam is the kind of choice the
+  slot is for.
+- **The button** is `Space` or a mouse button, and on a phone a big button on the right named
+  for the usable (BUCKET, WHISTLE, WOOF, LICK, DECOY, HURDLE, BEAM), which says HOLD, TAP or
+  WAIT and fills as it comes back. The HUD's third row is the usable: its name, its key, a
+  recharge bar and its level, and the line at the foot of the screen names the key, as Gafoop
+  does when he gets it. A press that finds nothing to do (a beam with no one to beam) costs
+  nothing, and says so.
+- **Portable Hurdle**: a length of fence across Gafoop's way, centred on him. Sheep cannot cross
+  it (the flock model sees it as a wall); Gloops go round it, and a team carrying a sheep stops
+  at it, which is often time enough for the stamp. Longer and longer-lasting with levels, two
+  standing at once from level 3, and electrified at 4, hurting what touches it.
+- **Tractor Beam**: the answer to a sheep being carried off out of reach. The nearest taken
+  sheep within range (16 m, up to 30) is beamed to the flock's middle and its grabbers are
+  stunned for a moment; with no one being taken, the straggler furthest from the flock comes
+  home instead. Two at level 4.
+- The harness's bot presses the ones it understands when they would help: the bark at two
+  monsters in reach, the beam at a taken sheep more than 6 m off, the whistle when a group has
+  strayed, the lick while it circles the flock, decoys when monsters close on it. It takes a
+  usable it knows over provisions and never swaps.
+
+All six harness seeds still win, at level 14–20, with 4–28 sheep. In two of them the bot never
+shears: monsters are at the flock nearly all the time, and on the way to a booth it drives into
+them rather than fighting (its old weakness, §11.2). The bark taught it something a player will
+have to learn too: an untrained Woof-Woof (levels 1–2) frightens the flock, and frightened sheep
+grow no wool, so barking whenever two monsters were in reach left one seed with fewer sheep than
+never barking at all. It now barks by the flock only to free a sheep being taken.
+
 ---
 
 ## 12. Risks
@@ -922,11 +978,11 @@ are filed (§9.3), are S2's; with thirty-five items a playtest sees plenty witho
 
 | Question | Recommendation |
 |---|---|
-| Does the flock follow Gafoop by default, or only while the bucket is held? | Settled by the first playtests (§11.2, §11.3): sheep move off as he comes; a feed bucket is a tool he may find |
+| Does the flock follow Gafoop by default, or only while the bucket is held? | Settled by the first playtests (§11.2–§11.4): sheep move off as he comes; a feed bucket is a usable he may find |
 | How strong is Gafoop's presence, and do monsters still come from the flock's far side now that he drives it from behind? | 0.6 over 6 m to start (the valley's was 0.85 over 9 m); the next playtest says (§11.2) |
 | Is the flock the only fail state? | Yes, with knockouts for Gafoop (§6) |
 | Run length | 15 minutes for stage 1, 20 after; phones may want a 10-minute mode |
-| Does building survive (hurdles, pens)? | Not in S0. Later, possibly as deployable gear (a hurdle ring, a woof post) in the way Brotato has structures |
+| Does building survive (hurdles, pens)? | Only as gear: S0 has a portable hurdle among the usables (§11.4). Later, possibly more of it (a hurdle ring, a woof post), the way Brotato has structures |
 | Grazing pressure | Keep it if S0 shows it adds decisions, not chores |
 | Wool as a cushion (§5.2) | Keep it if testers understand it without being told |
 | Level-ups: pause each time, or bank them for a breather? | Prototype both in S0 (§8.1); banking may suit phones better |
