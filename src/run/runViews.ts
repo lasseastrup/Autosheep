@@ -6,6 +6,7 @@ import { bakeRigid } from '../engine/bake';
 import { C } from '../engine/palette';
 import { castShadows, noOutline, toon } from '../engine/toon';
 import { RUN, SAUCER } from './config';
+import { STATS as ITEM_STATS } from './items';
 import { KIND, Phase } from './enemies';
 import { BOOTH_HALF, BOOTH_SIDE, type BoothSite } from './field';
 import { STATS } from './items';
@@ -224,12 +225,13 @@ export class PickupView {
   }
 }
 
-/** Staples in flight, the shredder's blades, and the bells on collared sheep. */
+/** Staples in flight, the shredder's blades, the bells on collared sheep and the rams' horns. */
 export class GearView {
   readonly root = new THREE.Group();
   private readonly staples: THREE.InstancedMesh;
   private readonly blades: THREE.InstancedMesh;
   private readonly bells: THREE.InstancedMesh;
+  private readonly horns: THREE.InstancedMesh;
   private readonly m = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
   private readonly p = new THREE.Vector3();
@@ -239,7 +241,9 @@ export class GearView {
     this.staples = noOutline(new THREE.InstancedMesh(new THREE.BoxGeometry(0.34, 0.07, 0.08), toon(C.white), stapleCap));
     this.blades = new THREE.InstancedMesh(new THREE.BoxGeometry(0.62, 0.05, 0.2), toon(C.fog), 4);
     this.bells = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 6, 4), toon(C.gold, { emissive: C.amber, emissiveIntensity: 0.3 }), sheepCap);
-    for (const mesh of [this.staples, this.blades, this.bells]) {
+    // a curled horn: most of a ring, stood on edge
+    this.horns = new THREE.InstancedMesh(new THREE.TorusGeometry(0.14, 0.06, 4, 8, Math.PI * 1.5), toon(C.clay), sheepCap * 2);
+    for (const mesh of [this.staples, this.blades, this.bells, this.horns]) {
       mesh.count = 0;
       mesh.frustumCulled = false;
       this.root.add(mesh);
@@ -290,6 +294,23 @@ export class GearView {
     }
     this.bells.count = n;
     this.bells.instanceMatrix.needsUpdate = true;
+
+    n = 0;
+    for (let j = 0; j < run.n; j++) {
+      if (!run.horns[j] || run.status[j] !== Sheep.Flock) continue;
+      const at = flockPos(j);
+      const h = o.heading[j];
+      const fx = Math.cos(h);
+      const fz = Math.sin(h);
+      for (const side of [-1, 1]) {
+        this.p.set(at.x + fx * 0.36 - fz * side * 0.2, 0.9 + run.lift[j], at.z + fz * 0.36 + fx * side * 0.2);
+        this.q.setFromAxisAngle(UP, -h + Math.PI / 2);
+        this.m.compose(this.p, this.q, this.one);
+        this.horns.setMatrixAt(n++, this.m);
+      }
+    }
+    this.horns.count = n;
+    this.horns.instanceMatrix.needsUpdate = true;
   }
 }
 
@@ -373,6 +394,274 @@ export class BoothView {
       v.cable.position.copy(this.hook).addScaledVector(d, 0.5);
       v.cable.quaternion.setFromUnitVectors(this.up, d.multiplyScalar(-1 / (len || 1)));
       v.cable.scale.set(1, len, 1);
+    });
+  }
+}
+
+/** A folded paper dart, nose along +x. */
+function dart(): THREE.BufferGeometry {
+  const v = [
+    // left wing, right wing, keel
+    0.32, 0, 0, -0.2, 0, 0, -0.22, 0.02, 0.2,
+    0.32, 0, 0, -0.22, 0.02, -0.2, -0.2, 0, 0,
+    0.32, 0, 0, -0.2, -0.09, 0, -0.2, 0, 0,
+  ];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Paper planes in flight, banking as they turn. */
+export class PlaneView {
+  readonly root = new THREE.Group();
+  private readonly mesh: THREE.InstancedMesh;
+  private readonly m = new THREE.Matrix4();
+  private readonly q = new THREE.Quaternion();
+  private readonly e = new THREE.Euler();
+  private readonly p = new THREE.Vector3();
+  private readonly big = new THREE.Vector3(1.6, 1.6, 1.6);
+
+  constructor(cap: number) {
+    this.mesh = new THREE.InstancedMesh(dart(), toon(C.white, { side: THREE.DoubleSide }), cap);
+    this.mesh.count = 0;
+    this.mesh.frustumCulled = false;
+    this.mesh.castShadow = true;
+    this.root.add(this.mesh);
+  }
+
+  update(run: Run, alpha: number, time: number): void {
+    const p = run.planes;
+    let n = 0;
+    for (let k = 0; k < p.high; k++) {
+      if (!p.alive[k]) continue;
+      this.p.set(lerp(p.px[k], p.x[k], alpha), 1.2 + Math.sin(time * 6 + k) * 0.08, lerp(p.py[k], p.y[k], alpha));
+      this.e.set(Math.sin(time * 5 + k) * 0.3, -Math.atan2(p.vy[k], p.vx[k]), 0, 'YXZ');
+      this.q.setFromEuler(this.e);
+      this.m.compose(this.p, this.q, this.big);
+      this.mesh.setMatrixAt(n++, this.m);
+    }
+    this.mesh.count = n;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+/** Filing cabinets falling from orbit, landing with a bump, then filed away. */
+export class CabinetView {
+  readonly root = new THREE.Group();
+  private readonly pool: { cab: THREE.Group; shadow: THREE.Mesh }[] = [];
+
+  constructor(cap: number) {
+    const body = toon(C.sageLight);
+    const dark = toon(C.swamp);
+    const handle = toon(C.mist);
+    for (let k = 0; k < cap; k++) {
+      const cab = new THREE.Group();
+      cab.add(mesh(new THREE.BoxGeometry(0.7, 1.2, 0.62), body, [0, 0.6, 0]));
+      for (let d = 0; d < 3; d++) {
+        const y = 0.24 + d * 0.38;
+        cab.add(mesh(new THREE.BoxGeometry(0.62, 0.03, 0.02), dark, [0, y + 0.17, 0.315]));
+        cab.add(mesh(new THREE.BoxGeometry(0.16, 0.05, 0.05), handle, [0, y, 0.33]));
+      }
+      castShadows(cab, true, false);
+      bakeRigid(cab, []);
+      cab.visible = false;
+      const shadow = noOutline(new THREE.Mesh(new THREE.CircleGeometry(0.55, 12), new THREE.MeshBasicMaterial({ color: new THREE.Color(C.black), transparent: true, opacity: 0.35, depthWrite: false })));
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.visible = false;
+      this.root.add(cab, shadow);
+      this.pool.push({ cab, shadow });
+    }
+  }
+
+  update(run: Run): void {
+    const c = run.cabinets;
+    const fall = ITEM_STATS.cabinet(1).fall;
+    this.pool.forEach((v, k) => {
+      const on = k < c.cap && c.alive[k] === 1;
+      v.cab.visible = on;
+      v.shadow.visible = on;
+      if (!on) return;
+      const t = c.t[k];
+      const k01 = Math.min(1, t / fall);
+      const h = t < fall ? 14 * (1 - k01 * k01) : 0;
+      // a bump on landing, and filed away at the end
+      const squash = t >= fall && t < fall + 0.15 ? 0.85 : 1;
+      const gone = Math.max(0, Math.min(1, (t - fall - 1.1) / 0.3));
+      v.cab.position.set(c.x[k], h, c.y[k]);
+      v.cab.rotation.y = k * 1.3;
+      v.cab.scale.set(1 - gone, squash * (1 - gone), 1 - gone);
+      v.shadow.position.set(c.x[k], 0.04, c.y[k]);
+      v.shadow.scale.setScalar(0.4 + 0.6 * k01);
+    });
+  }
+}
+
+/** Inflatable sheep: pink, a little shiny, bobbing on their stick legs. */
+export class DecoyView {
+  readonly root = new THREE.Group();
+  private readonly pool: THREE.Group[] = [];
+
+  constructor(cap: number) {
+    const skin = toon(C.pinkLight, { emissive: C.blush, emissiveIntensity: 0.15 });
+    const leg = toon(C.blush);
+    for (let k = 0; k < cap; k++) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(blob(0.42, 1, 0.06, 11 + k), skin);
+      body.scale.set(1.25, 0.95, 0.95);
+      body.position.y = 0.62;
+      g.add(body, mesh(new THREE.SphereGeometry(0.2, 8, 6), skin, [0.5, 0.82, 0]));
+      g.add(mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 5), leg, [-0.55, 0.72, 0], [0, 0, Math.PI / 2]));
+      for (const [x, z] of [[0.28, 0.18], [0.28, -0.18], [-0.28, 0.18], [-0.28, -0.18]]) g.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 5), leg, [x, 0.18, z]));
+      castShadows(g, true, false);
+      bakeRigid(g, []);
+      g.visible = false;
+      this.root.add(g);
+      this.pool.push(g);
+    }
+  }
+
+  update(run: Run, time: number): void {
+    const d = run.decoys;
+    this.pool.forEach((g, k) => {
+      g.visible = k < d.cap && d.alive[k] === 1;
+      if (!g.visible) return;
+      // blown up when it comes, letting go of its air when it is nearly done
+      const up = Math.min(1, d.age[k] / 0.4);
+      const down = Math.min(1, d.life[k] / 1.2);
+      const s = Math.max(0.05, up * down);
+      g.position.set(d.x[k], Math.sin(time * 3 + k) * 0.05, d.y[k]);
+      g.rotation.y = k * 2.1 + Math.sin(time * 1.3 + k) * 0.2;
+      g.scale.set(s, s * (1 + Math.sin(time * 4 + k) * 0.03), s);
+    });
+  }
+}
+
+/** Salt licks: a pink block on a stake. */
+export class LickView {
+  readonly root = new THREE.Group();
+  private readonly pool: THREE.Group[] = [];
+
+  constructor(cap: number) {
+    for (let k = 0; k < cap; k++) {
+      const g = new THREE.Group();
+      g.add(mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), toon(C.tan), [0, 0.25, 0]));
+      g.add(mesh(new THREE.BoxGeometry(0.5, 0.36, 0.5), toon(C.peach), [0, 0.62, 0]));
+      g.add(mesh(new THREE.BoxGeometry(0.52, 0.06, 0.52), toon(C.skin), [0, 0.81, 0]));
+      castShadows(g, true, false);
+      bakeRigid(g, []);
+      g.visible = false;
+      this.root.add(g);
+      this.pool.push(g);
+    }
+  }
+
+  update(run: Run): void {
+    const l = run.licks;
+    this.pool.forEach((g, k) => {
+      g.visible = k < l.cap && l.alive[k] === 1;
+      if (!g.visible) return;
+      const s = Math.min(1, l.age[k] / 0.25, l.life[k] / 0.6);
+      g.position.set(l.x[k], 0, l.y[k]);
+      g.scale.setScalar(Math.max(0.05, s));
+    });
+  }
+}
+
+/** Clockwork collies: brass dogs with a winding key, legs going when they run. */
+export class CollieView {
+  readonly root = new THREE.Group();
+  private readonly pool: { dog: THREE.Group; legs: THREE.Object3D[]; key: THREE.Object3D; facing: number }[] = [];
+
+  constructor(cap: number) {
+    const brass = toon(C.gold, { emissive: C.amber, emissiveIntensity: 0.15 });
+    const dark = toon(C.rust);
+    const black = toon(C.black);
+    for (let k = 0; k < cap; k++) {
+      const dog = new THREE.Group();
+      // nose along +x
+      dog.add(mesh(new THREE.BoxGeometry(0.62, 0.26, 0.26), brass, [0, 0.42, 0]));
+      dog.add(mesh(new THREE.BoxGeometry(0.26, 0.24, 0.24), brass, [0.38, 0.6, 0]));
+      dog.add(mesh(new THREE.BoxGeometry(0.16, 0.1, 0.14), dark, [0.56, 0.56, 0]));
+      for (const z of [-0.08, 0.08]) {
+        dog.add(mesh(new THREE.BoxGeometry(0.06, 0.12, 0.06), dark, [0.34, 0.78, z]));
+        dog.add(mesh(new THREE.BoxGeometry(0.03, 0.04, 0.03), black, [0.5, 0.65, z]));
+      }
+      const tail = mesh(new THREE.BoxGeometry(0.22, 0.05, 0.05), brass, [-0.38, 0.55, 0], [0, 0, 0.7]);
+      dog.add(tail);
+      const legs: THREE.Object3D[] = [];
+      for (const [x, z] of [[0.22, 0.09], [0.22, -0.09], [-0.22, 0.09], [-0.22, -0.09]]) {
+        const pivot = new THREE.Group();
+        pivot.position.set(x, 0.32, z);
+        pivot.add(mesh(new THREE.BoxGeometry(0.07, 0.3, 0.07), dark, [0, -0.15, 0]));
+        dog.add(pivot);
+        legs.push(pivot);
+      }
+      // the winding key on its back
+      const key = new THREE.Group();
+      key.position.set(-0.05, 0.6, 0);
+      key.add(mesh(new THREE.BoxGeometry(0.04, 0.14, 0.04), dark, [0, 0, 0]));
+      key.add(mesh(new THREE.TorusGeometry(0.07, 0.025, 4, 8), brass, [0, 0.12, 0]));
+      dog.add(key);
+      castShadows(dog, true, false);
+      bakeRigid(dog, [...legs, key]);
+      dog.scale.setScalar(1.45);
+      dog.visible = false;
+      this.root.add(dog);
+      this.pool.push({ dog, legs, key, facing: 0 });
+    }
+  }
+
+  update(run: Run, alpha: number, time: number, dt: number): void {
+    this.pool.forEach((v, k) => {
+      const c = run.collies[k];
+      v.dog.visible = !!c;
+      if (!c) return;
+      const x = lerp(c.px, c.x, alpha);
+      const z = lerp(c.py, c.y, alpha);
+      const speed = Math.hypot(c.vx, c.vy);
+      if (speed > 0.3) {
+        let d = -Math.atan2(c.vy, c.vx) - v.facing;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        v.facing += d * (1 - Math.exp(-dt * 12));
+      }
+      v.dog.position.set(x, Math.abs(Math.sin(time * 14)) * Math.min(0.1, speed * 0.015), z);
+      v.dog.rotation.y = v.facing;
+      const swing = Math.sin(time * 16) * Math.min(0.7, speed * 0.12);
+      v.legs.forEach((l, i) => (l.rotation.z = i % 3 === 0 ? swing : -swing));
+      v.key.rotation.x = time * 4;
+    });
+  }
+}
+
+/** Shearing drones: little Bureau saucers, beaming at the sheep they are shearing. */
+export class DroneView {
+  readonly root = new THREE.Group();
+  private readonly pool: Saucer[] = [];
+
+  constructor(cap: number) {
+    for (let k = 0; k < cap; k++) {
+      const d = new Saucer(k + 11, C.teal);
+      d.root.scale.setScalar(0.32);
+      d.root.visible = false;
+      this.root.add(d.root);
+      this.pool.push(d);
+    }
+  }
+
+  update(run: Run, alpha: number, time: number): void {
+    const o = run.model.out;
+    this.pool.forEach((d, k) => {
+      const dr = run.drones[k];
+      d.root.visible = !!dr;
+      if (!dr) return;
+      const x = lerp(dr.px, dr.x, alpha);
+      const z = lerp(dr.py, dr.y, alpha);
+      const h = 2.4 + Math.sin(time * 2.3 + k) * 0.12;
+      d.root.position.set(x, h, z);
+      d.update(time);
+      const on = dr.target >= 0 && Math.hypot(o.x[dr.target] - dr.x, o.y[dr.target] - dr.y) < 1.2;
+      d.setBeam(on ? 0.7 + 0.3 * Math.sin(time * 18) : 0, (h - 0.6) / 0.32);
     });
   }
 }

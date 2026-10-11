@@ -28,8 +28,11 @@ export class Bot {
   drive(): void {
     const r = this.run;
     if (r.choices) {
-      const k = r.choices.findIndex((c) => 'item' in c && ITEMS[c.item].kind === 'armament');
-      r.choose(k >= 0 ? k : 0);
+      // armaments first, then tools (not the bucket: it has no hands for one), then the rest
+      const rank = (c: (typeof r.choices)[number]) => ('item' in c ? (ITEMS[c.item].kind === 'armament' ? 0 : c.item === 'bucket' ? 3 : ITEMS[c.item].kind === 'tool' ? 1 : 2) : 4);
+      let k = 0;
+      r.choices.forEach((c, q) => { if (rank(c) < rank(r.choices![k])) k = q; });
+      r.choose(k);
     }
     if (r.options.levelups === 'bank' && r.pending > 0) r.openSupplies();
     const g = r.gafoop;

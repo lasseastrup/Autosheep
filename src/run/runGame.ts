@@ -14,12 +14,12 @@ import { buildScenery } from '../game/level';
 import { Bot } from './bot';
 import { DEFAULT_OPTIONS, FIELD, RUN, xpToNext, type RunOptions } from './config';
 import { meadowField, type RunField } from './field';
-import { ITEMS, type ItemId } from './items';
+import { ITEMS, STATS, type ItemId, type ItemKind } from './items';
 import { KIND, Phase } from './enemies';
 import { Run, Sheep, type RunEvent } from './run';
 import type { RunAudio } from './runAudio';
 import { buttonAt, drawRunHud, H, runButtons, W, type Fx, type RunButton, type RunHudState, type RunLayout, type Screen } from './runHud';
-import { BoothView, GearView, GloopView, PickupView, SaucerView } from './runViews';
+import { BoothView, CabinetView, CollieView, DecoyView, DroneView, GearView, GloopView, LickView, PickupView, PlaneView, SaucerView } from './runViews';
 
 const OPTIONS_KEY = 'autosheep.survivors.options';
 
@@ -41,6 +41,26 @@ const BARKS: Record<string, string[]> = {
   halfway: ['Halfway. The Bureau is famously punctual.'],
   final: ['One minute to the hearing! Hold on to them!'],
   scatter: ['Stop panicking! I am a very calm alien!', 'No, no, the OTHER way!'],
+  // the first time each item comes
+  'got:bucket': ['A feed bucket! Hold SPACE, or a mouse button, and they come running.'],
+  'got:whistle': ['A dog whistle. Dogs love these, I am told.'],
+  'got:woof': ['The Woof-Woof 3000. I am a dog now.'],
+  'got:collie': ['A clockwork collie! Good boy. Good brass boy.'],
+  'got:lick': ['Salt licks. The sheep go mad for them.'],
+  'got:decoys': ['Inflatable sheep. Practically indistinguishable.'],
+  'got:drone': ['A Bureau shearing drone. Licensed and everything.'],
+  'got:planes': ['Paper planes! Form 77-B, folded for speed.'],
+  'got:tape': ['Red tape. Nothing gets through red tape.'],
+  'got:punch': ['A hole punch. For the big ones.'],
+  'got:cabinet': ['Blorp! Drop the cabinets!'],
+  'got:rams': ['Horns! Go on, lads. Butt them.'],
+  'got:tags': ['Ear tags, with a little something extra.'],
+  'got:flak': ['Exploding fleece. Do not ask where the Bureau got it.'],
+  'got:lambs': ['Lambing season! More troops.'],
+};
+/** On a phone the bucket has a button rather than a key. */
+const TOUCH_BARKS: Record<string, string[]> = {
+  'got:bucket': ['A feed bucket! Hold BUCKET and they come running.'],
 };
 
 export interface RunGameInput {
@@ -80,6 +100,12 @@ export class RunGame {
   private readonly pickups: PickupView;
   private readonly gear: GearView;
   private readonly boothView: BoothView;
+  private readonly planeView: PlaneView;
+  private readonly cabinetView: CabinetView;
+  private readonly decoyView: DecoyView;
+  private readonly lickView: LickView;
+  private readonly collieView: CollieView;
+  private readonly droneView: DroneView;
   private readonly puffs = new PuffSystem(600);
   run!: Run;
   screen: Screen = 'title';
@@ -146,7 +172,14 @@ export class RunGame {
     this.pickups = new PickupView(400);
     this.gear = new GearView(160, RUN.capacity);
     this.boothView = new BoothView(this.field.booths);
+    this.planeView = new PlaneView(64);
+    this.cabinetView = new CabinetView(8);
+    this.decoyView = new DecoyView(6);
+    this.lickView = new LickView(2);
+    this.collieView = new CollieView(2);
+    this.droneView = new DroneView(2);
     s.add(this.boothView.root, this.gloops.root, this.saucers.root, this.pickups.root, this.gear.root, this.puffs.mesh);
+    s.add(this.planeView.root, this.cabinetView.root, this.decoyView.root, this.lickView.root, this.collieView.root, this.droneView.root);
 
     this.options = loadOptions();
     this.cam.zoomIndex = 1;
@@ -248,7 +281,7 @@ export class RunGame {
     const g = run.gafoop;
     const gx = lerp(g.px, g.x, alpha);
     const gz = lerp(g.py, g.y, alpha);
-    this.gafoop.tool = run.input.bucket ? 'bucket' : 'idle';
+    this.gafoop.tool = run.input.bucket && run.lvl('bucket') > 0 ? 'bucket' : 'idle';
     this.gafoop.place(gx, gz, g.vx, g.vy, dt, this.wall);
     // knocked out: he spins; hit: he blinks
     this.gafoop.root.rotation.z = g.ko > 0 ? Math.sin(this.wall * 9) * 0.35 : 0;
@@ -260,6 +293,12 @@ export class RunGame {
     this.pickups.update(run, alpha, this.wall);
     this.gear.update(run, alpha, (i) => this.flock.position(i, this.tmp));
     this.boothView.update(run, this.wall, dt);
+    this.planeView.update(run, alpha, this.wall);
+    this.cabinetView.update(run);
+    this.decoyView.update(run, this.wall);
+    this.lickView.update(run);
+    this.collieView.update(run, alpha, this.wall, dt);
+    this.droneView.update(run, alpha, this.wall);
     this.puffs.update(this.wall);
     for (const [i, b] of this.blinkers.entries()) b.visible = Math.floor(this.wall * 1.5 + i * 0.5) % 2 === 0;
 
@@ -486,6 +525,70 @@ export class RunGame {
         case 'first':
           this.say(e.what, 0.2);
           break;
+        case 'item':
+          if (e.level === 1) this.say(`got:${e.id}`, 0.4);
+          break;
+        case 'plane':
+          a?.plane();
+          break;
+        case 'punch':
+          this.fx.push({ kind: 'ring', x: e.x, y: e.y, r: 1.1, age: 0, life: 0.3, color: C.white });
+          this.fx.push({ kind: 'stamp', x: e.x, y: e.y, age: 0, life: 0.45, label: 'PUNCHED', color: C.white });
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.7, e.y), 6, { color: [C.white, C.mist], size: 0.12, speed: 2.4, life: 0.5, up: 1.5 });
+          a?.punch(this.pan(e.x, e.y));
+          break;
+        case 'drop':
+          a?.drop(this.pan(e.x, e.y));
+          break;
+        case 'cabinet':
+          this.fx.push({ kind: 'ring', x: e.x, y: e.y, r: e.r, age: 0, life: 0.4, color: C.mist });
+          this.fx.push({ kind: 'stamp', x: e.x, y: e.y, age: 0, life: 0.5, label: 'FILED', color: C.mist });
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.3, e.y), 12, { color: [C.fog, C.mist, C.khaki], size: 0.3, speed: 3, life: 0.6, up: 0.6 });
+          a?.cabinet(this.pan(e.x, e.y));
+          break;
+        case 'butt':
+          if (this.fx.length < 80) this.fx.push({ kind: 'ring', x: e.x, y: e.y, r: 0.9, age: 0, life: 0.25, color: C.bone });
+          a?.butt(this.pan(e.x, e.y));
+          break;
+        case 'flak':
+          if (this.fx.length < 80) this.fx.push({ kind: 'ring', x: e.x, y: e.y, r: e.r, age: 0, life: 0.3, color: C.white });
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.7, e.y), e.r > 2 ? 10 : 4, { color: [C.white, C.mist], size: 0.2, speed: 2.6, life: 0.5, up: 1 });
+          a?.flak(this.pan(e.x, e.y));
+          break;
+        case 'whistle':
+          this.fx.push({ kind: 'ring', x: e.x, y: e.y, r: Math.min(e.r, 14), age: 0, life: 0.7, color: C.skyLight });
+          a?.whistle();
+          break;
+        case 'woof':
+          this.fx.push({ kind: 'ring', x: e.x, y: e.y, r: e.r, age: 0, life: 0.35, color: C.white });
+          this.fx.push({ kind: 'stamp', x: e.x, y: e.y, age: 0, life: 0.45, label: 'WOOF!', color: C.gold });
+          a?.woof();
+          break;
+        case 'bite':
+          a?.bite(this.pan(e.x, e.y));
+          break;
+        case 'lick':
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.6, e.y), 5, { color: [C.peach, C.skin], size: 0.18, speed: 1.2, life: 0.5, up: 1 });
+          a?.lick(this.pan(e.x, e.y));
+          break;
+        case 'decoy':
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.5, e.y), 5, { color: [C.pinkLight, C.white], size: 0.16, speed: 1.2, life: 0.4, up: 1 });
+          a?.decoy(this.pan(e.x, e.y));
+          break;
+        case 'burst':
+          this.fx.push({ kind: 'ring', x: e.x, y: e.y, r: e.r, age: 0, life: 0.35, color: C.pinkLight });
+          this.fx.push({ kind: 'stamp', x: e.x, y: e.y, age: 0, life: 0.4, label: 'POP!', color: C.pinkLight });
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.6, e.y), 12, { color: [C.pinkLight, C.blush, C.white], size: 0.2, speed: 3, life: 0.5, up: 1 });
+          a?.burst(this.pan(e.x, e.y));
+          break;
+        case 'lamb':
+          this.float(e.x, e.y, 1.4, '+1 LAMB', C.lime);
+          a?.lamb();
+          break;
+        case 'kick':
+          this.float(o.x[e.sheep], o.y[e.sheep], 1.6, 'KICKED FREE!', C.lime);
+          a?.freed(this.pan(o.x[e.sheep], o.y[e.sheep]));
+          break;
         case 'hearing':
           a?.hearing();
           this.float(run.gafoop.x, run.gafoop.y, 2.8, 'ORDER! ORDER!', C.gold);
@@ -501,7 +604,7 @@ export class RunGame {
   private say(what: string, delay: number, again = false): void {
     if (!again && this.said.has(what)) return;
     this.said.add(what);
-    const list = BARKS[what];
+    const list = (this.touch ? TOUCH_BARKS[what] : undefined) ?? BARKS[what];
     if (!list) return;
     this.gafoop.say(list[this.quip++ % list.length], this.wall + delay, 3);
   }
@@ -561,6 +664,7 @@ export class RunGame {
       touch: this.touch,
       choosing: this.screen === 'play' && this.run.choices !== null,
       supplies: this.screen === 'play' && this.run.options.levelups === 'bank' && !this.run.choices ? this.run.pending : 0,
+      bucket: this.run.lvl('bucket') > 0,
       perf: this.showPerf,
     };
   }
@@ -685,6 +789,25 @@ export class RunGame {
     };
     const arrows: RunHudState['arrows'] = [];
     const marks: RunHudState['marks'] = [];
+    const tape: RunHudState['tape'] = [];
+    const drops: RunHudState['drops'] = [];
+    if (this.screen !== 'title') {
+      const t = run.tape;
+      const life = STATS.tape(Math.max(1, run.lvl('tape'))).life;
+      for (let k = 0; k < t.cap; k++) {
+        const p = t.prev[k];
+        if (!t.alive[k] || p < 0 || !t.alive[p]) continue;
+        const a = toScreen(t.x[p], t.y[p], 0.05);
+        const b = toScreen(t.x[k], t.y[k], 0.05);
+        tape.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y, fade: 1 - (run.time - t.born[k]) / life });
+      }
+      const c = run.cabinets;
+      const fall = STATS.cabinet(1).fall;
+      for (let k = 0; k < c.cap; k++) {
+        if (!c.alive[k] || c.t[k] >= fall) continue;
+        drops.push({ ...toScreen(c.x[k], c.y[k]), r: c.radius[k], k: c.t[k] / fall });
+      }
+    }
     const booths: RunHudState['booths'] = [];
     for (const b of run.booths) {
       const p = toScreen(b.site.mx, b.site.my);
@@ -743,14 +866,16 @@ export class RunGame {
       flock: run.flockCount,
       taken: run.takenCount,
       composure: g0.composure,
-      composureMax: RUN.gafoop.composure,
+      composureMax: run.composureMax,
       ko: Math.max(0, g0.ko),
       invulnerable: g0.invulnerable > 0,
-      items: items as { id: ItemId; level: number; max: number; kind: 'armament' | 'provision' }[],
+      items: items as { id: ItemId; level: number; max: number; kind: ItemKind }[],
       choices: run.choices ? run.choices.map((c) => Run.describe(c)) : null,
       arrows,
       marks,
       booths,
+      tape,
+      drops,
       fx: this.fx,
       floaters: this.floaters,
       bubble,

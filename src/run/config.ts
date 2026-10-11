@@ -28,11 +28,11 @@ export const RUN = {
   /**
    * Gafoop's presence: the flock moves off as he comes, more the faster he closes, as it did in
    * the valley before the Woof-Woof (0.85 over 9 m there; gentler here, where he is always
-   * flying about fighting). While he holds the bucket he is mostly forgiven, and they come to it.
+   * flying about fighting). While he holds a feed bucket (a tool, items.ts) he is mostly
+   * forgiven, and they come to it.
    */
   presence: { strength: 0.6, radius: 6 },
   withBucket: { strength: 0.2, radius: 4 },
-  bucket: { strength: 1.0, radius: 14 },
   wool: {
     /** seconds for a fed, calm sheep's fleece to grow from nothing */
     grow: 40,

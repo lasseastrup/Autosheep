@@ -76,6 +76,64 @@ export class RunAudio extends GameAudio {
     sfx.pop(this.a, this.t + 0.08, { pitch: 2.0, vol: 0.3, pan });
   }
 
+  plane(): void {
+    if (this.ok('plane', 0.2)) sfx.whoosh(this.a, this.t, { dur: 0.3, from: 1400, to: 3000, vol: 0.2 });
+  }
+
+  punch(pan: number): void {
+    if (!this.ok('punch', 0.15)) return;
+    sfx.thud(this.a, this.t, { vol: 0.7, pitch: 1.3, pan });
+    sfx.pop(this.a, this.t + 0.03, { pitch: 0.9, vol: 0.5, pan });
+  }
+
+  drop(pan: number): void {
+    if (this.ok('drop', 0.3)) sfx.whistleFall(this.a, this.t, { dur: 0.8, vol: 0.6, pan });
+  }
+
+  cabinet(pan: number): void {
+    if (this.ok('cabinet', 0.15)) sfx.crash(this.a, this.t, { vol: 0.45, pan });
+  }
+
+  butt(pan: number): void {
+    if (this.ok('butt', 0.12)) sfx.thud(this.a, this.t, { vol: 0.45, pitch: 1.1, pan });
+  }
+
+  flak(pan: number): void {
+    if (this.ok('flak', 0.08)) sfx.pop(this.a, this.t, { pitch: 0.7 + Math.random() * 0.3, vol: 0.45, pan });
+  }
+
+  whistle(): void {
+    if (!this.ok('whistle', 0.5)) return;
+    sfx.beep(this.a, this.t, { pitch: 2.6, vol: 0.25, dur: 0.12 });
+    sfx.beep(this.a, this.t + 0.16, { pitch: 3.2, vol: 0.25, dur: 0.22 });
+  }
+
+  woof(): void {
+    if (this.ok('woof', 0.3)) sfx.megaphone(this.a, this.t, { vol: 0.7, pitch: 0.6, dur: 0.25 });
+  }
+
+  bite(pan: number): void {
+    if (this.ok('bite', 0.2)) sfx.typeBlip(this.a, this.t, { vol: 0.4, pitch: 0.6, pan });
+  }
+
+  lick(pan: number): void {
+    if (this.ok('lick', 0.3)) sfx.thud(this.a, this.t, { vol: 0.35, pitch: 1.6, pan });
+  }
+
+  decoy(pan: number): void {
+    if (this.ok('decoy', 0.3)) sfx.steam(this.a, this.t, { vol: 0.25, dur: 0.4, pan });
+  }
+
+  burst(pan: number): void {
+    if (!this.ok('burst', 0.1)) return;
+    sfx.pop(this.a, this.t, { pitch: 0.55, vol: 0.9, pan });
+    sfx.poof(this.a, this.t + 0.02, { vol: 0.5, pitch: 1.4, pan });
+  }
+
+  lamb(): void {
+    sfx.bleat(this.a, this.t, { vol: 0.6, pitch: 1.6, len: 0.35 });
+  }
+
   pickup(): void {
     if (this.ok('pickup', 0.05)) sfx.pop(this.a, this.t, { pitch: 2.2 + Math.random() * 0.4, vol: 0.12 });
   }

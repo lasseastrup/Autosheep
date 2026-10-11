@@ -1,11 +1,11 @@
-import type { FlockModel, Stimulus } from '../sim/contract';
+import { SheepState, type FlockModel, type Stimulus } from '../sim/contract';
 import { SheepherdingV1 } from '../sim/models/sheepherding-v1';
 import { GrassField } from '../sim/grass';
 import { cluster } from '../sim/scenarios';
 import { Rng } from '../engine/rng';
 import { DEFAULT_OPTIONS, DIRECTOR, ENEMY, FIELD, HP_PER_MINUTE, MINUTES, MODEL_PATCH, RUN, SAUCER, xpToNext, type EnemyKind, type RunOptions } from './config';
 import { Enemies, EnemyGrid, KIND, KINDS, Phase } from './enemies';
-import { EXTRAS, ITEM_IDS, ITEMS, SLOTS, STATS, type Card, type Extra, type ItemId } from './items';
+import { EXTRAS, ITEM_IDS, ITEMS, SLOTS, STATS, type Card, type Extra, type ItemId, type ItemKind } from './items';
 import type { BoothSite, RunField } from './field';
 
 /** Where each sheep is in the story of a run. */
@@ -54,6 +54,21 @@ export type RunEvent =
   | { kind: 'beam'; enemy: number }
   | { kind: 'pickup'; crate: boolean }
   | { kind: 'first'; what: 'grab' | 'saucer' | 'carried' | 'elite' | 'lost' | 'claim' | 'gloop' | 'booth' }
+  | { kind: 'item'; id: ItemId; level: number }
+  | { kind: 'plane' }
+  | { kind: 'punch'; x: number; y: number }
+  | { kind: 'drop'; x: number; y: number }
+  | { kind: 'cabinet'; x: number; y: number; r: number }
+  | { kind: 'butt'; x: number; y: number }
+  | { kind: 'flak'; x: number; y: number; r: number }
+  | { kind: 'whistle'; x: number; y: number; r: number }
+  | { kind: 'woof'; x: number; y: number; r: number }
+  | { kind: 'bite'; x: number; y: number }
+  | { kind: 'lick'; x: number; y: number }
+  | { kind: 'decoy'; x: number; y: number }
+  | { kind: 'burst'; x: number; y: number; r: number }
+  | { kind: 'lamb'; x: number; y: number }
+  | { kind: 'kick'; sheep: number }
   | { kind: 'hearing' }
   | { kind: 'dismissed' };
 
@@ -119,6 +134,10 @@ export class Run {
   readonly hands = new Uint8Array(RUN.capacity);
   private readonly liftSum = new Float32Array(RUN.capacity);
   private readonly handCount = new Uint8Array(RUN.capacity);
+  /** grows horns (Ram Horns), and the seconds until it butts; seconds until its ear tag zaps */
+  readonly horns = new Uint8Array(RUN.capacity);
+  private readonly buttIn = new Float32Array(RUN.capacity);
+  private readonly tagIn = new Float32Array(RUN.capacity);
 
   readonly gafoop = {
     x: RUN.gafoopStart.x, y: RUN.gafoopStart.y, px: RUN.gafoopStart.x, py: RUN.gafoopStart.y,
@@ -140,6 +159,44 @@ export class Run {
     hitA: new Int32Array(160), hitB: new Int32Array(160),
   };
 
+  // ---- paper planes in flight, homing on a monster (`tuid`: its uid, so a reused slot is not it)
+  readonly planes = {
+    cap: 64, high: 0,
+    alive: new Uint8Array(64), x: new Float32Array(64), y: new Float32Array(64), px: new Float32Array(64), py: new Float32Array(64),
+    vx: new Float32Array(64), vy: new Float32Array(64), target: new Int32Array(64), tuid: new Int32Array(64),
+    damage: new Float32Array(64), pierce: new Uint8Array(64), life: new Float32Array(64), hit: new Int32Array(64),
+  };
+
+  /** red tape on the grass: points laid behind Gafoop, each joined to the one before (`prev`) */
+  readonly tape = {
+    cap: 200, next: 0,
+    alive: new Uint8Array(200), x: new Float32Array(200), y: new Float32Array(200), born: new Float32Array(200), prev: new Int32Array(200).fill(-1),
+  };
+  private tapeLast = { x: 0, y: 0, k: -1 };
+  /** monsters already caught by the tape this step */
+  private readonly taped = new Uint8Array(360);
+
+  /** filing cabinets on their way down from orbit (`t` < the fall time), then lying there */
+  readonly cabinets = {
+    cap: 8,
+    alive: new Uint8Array(8), x: new Float32Array(8), y: new Float32Array(8), t: new Float32Array(8), radius: new Float32Array(8), damage: new Float32Array(8),
+  };
+
+  /** inflatable sheep: Gloops go for them, and they burst */
+  readonly decoys = { cap: 6, alive: new Uint8Array(6), x: new Float32Array(6), y: new Float32Array(6), life: new Float32Array(6), age: new Float32Array(6) };
+
+  /** salt licks the flock gathers round */
+  readonly licks = { cap: 2, alive: new Uint8Array(2), x: new Float32Array(2), y: new Float32Array(2), life: new Float32Array(2), age: new Float32Array(2) };
+
+  /** clockwork collies, circling the flock (`orbit`: where round it) */
+  readonly collies: { x: number; y: number; px: number; py: number; vx: number; vy: number; orbit: number; bite: number }[] = [];
+
+  /** shearing drones: the sheep each is shearing (-1: none), its fleece then, and the wool cut so far */
+  readonly drones: { x: number; y: number; px: number; py: number; target: number; wool0: number; cut: number }[] = [];
+
+  /** the dog whistle's call: the flock's middle when it blew, until when, how far it carries */
+  private call = { x: 0, y: 0, until: -1, radius: 0, strength: 0 };
+
   // ---- things to pick up
   readonly pickups = {
     cap: 400, high: 0,
@@ -155,7 +212,10 @@ export class Run {
   /** the cards on offer, while a level-up is open (the run waits) */
   choices: Card[] | null = null;
   readonly items = new Map<ItemId, number>();
-  private readonly cooldown: Record<string, number> = { stamp: 0.5, stapler: 0, crook: 0, static: 0 };
+  private readonly cooldown: Record<string, number> = {
+    stamp: 0.5, stapler: 0, crook: 0, static: 0, planes: 0, punch: 0, cabinet: 1, flak: 0,
+    whistle: 3, woof: 0, lick: 2, decoys: 1, lambs: 20,
+  };
   over: 'won' | 'lost' | null = null;
   readonly stats = { kills: 0, found: 0, rescued: 0, lost: 0, sheared: 0, torn: 0, peak: RUN.startFlock, xpWool: 0, xpKills: 0 };
 
@@ -278,6 +338,29 @@ export class Run {
     return RUN.wool.cushion - 0.075 * this.lvl('fleece');
   }
 
+  /** Gafoop's pips of composure (Composure Training adds to them). */
+  get composureMax(): number {
+    return RUN.gafoop.composure + this.lvl('composure');
+  }
+
+  /** What the provisions do to every armament and tool: harder (Medal), sooner (Expedited
+   * Processing), wider (Bigger Cap), and more of whatever is fired (Triplicate). */
+  private get might(): number {
+    return 1 + 0.1 * this.lvl('medal');
+  }
+
+  private get quick(): number {
+    return 1 - 0.08 * this.lvl('expedite');
+  }
+
+  private get wide(): number {
+    return 1 + 0.12 * this.lvl('cap');
+  }
+
+  private get extra(): number {
+    return this.lvl('triplicate');
+  }
+
   /** Stray groups not yet found: where they are and how many. */
   strays(): { x: number; y: number; n: number }[] {
     const o = this.model.out;
@@ -301,13 +384,18 @@ export class Run {
     this.direct();
     this.strayStep();
     this.grid.build(this.enemies);
+    this.tapeStep(dt);
     this.enemyStep(dt);
     this.flockStep(dt);
     this.boothStep(dt);
     this.woolStep(dt);
     this.grid.build(this.enemies);
     this.weaponStep(dt);
+    this.toolStep(dt);
+    this.provisionStep(dt);
     this.stapleStep(dt);
+    this.planeStep(dt);
+    this.cabinetStep(dt);
     this.pickupStep(dt);
     this.stats.peak = Math.max(this.stats.peak, this.flockCount);
     this.checkEnd();
@@ -335,6 +423,10 @@ export class Run {
     for (let i = 0; i < s.high; i++) { s.px[i] = s.x[i]; s.py[i] = s.y[i]; }
     const p = this.pickups;
     for (let i = 0; i < p.high; i++) { p.px[i] = p.x[i]; p.py[i] = p.y[i]; }
+    const pl = this.planes;
+    for (let i = 0; i < pl.high; i++) { pl.px[i] = pl.x[i]; pl.py[i] = pl.y[i]; }
+    for (const c of this.collies) { c.px = c.x; c.py = c.y; }
+    for (const d of this.drones) { d.px = d.x; d.py = d.y; }
   }
 
   // ------------------------------------------------------------------ Gafoop
@@ -345,13 +437,13 @@ export class Run {
     if (g.ko > 0) {
       g.ko -= dt;
       if (g.ko <= 0) {
-        g.composure = G.composure;
+        g.composure = this.composureMax;
         g.invulnerable = 1.5;
       }
     }
     g.invulnerable = Math.max(0, g.invulnerable - dt);
     g.calm += dt;
-    if (g.ko <= 0 && g.calm >= G.regen && g.composure < G.composure) {
+    if (g.ko <= 0 && g.calm >= G.regen * (1 - 0.15 * this.lvl('composure')) && g.composure < this.composureMax) {
       g.composure++;
       g.calm = 0;
     }
@@ -511,15 +603,18 @@ export class Run {
     if (!this.strayGroups.length) return;
     const o = this.model.out;
     const g = this.gafoop;
+    const homing = this.lvl('homing');
+    const byGafoop = S.byGafoop + 3 * homing;
+    const byFlock = S.byFlock + 1.5 * homing;
     // the flock finding them costs more to check, so only every few steps
-    const byFlock = Math.round(this.time / this.dt) % 6 === 0;
+    const flockLooks = Math.round(this.time / this.dt) % 6 === 0;
     for (const grp of [...this.strayGroups]) {
       let found = false;
       for (const m of grp.members) {
-        if (Math.hypot(o.x[m] - g.x, o.y[m] - g.y) < S.byGafoop) { found = true; break; }
-        if (!byFlock) continue;
+        if (Math.hypot(o.x[m] - g.x, o.y[m] - g.y) < byGafoop) { found = true; break; }
+        if (!flockLooks) continue;
         for (let i = 0; i < this.n && !found; i++) {
-          if (this.status[i] === Sheep.Flock && Math.hypot(o.x[m] - o.x[i], o.y[m] - o.y[i]) < S.byFlock) found = true;
+          if (this.status[i] === Sheep.Flock && Math.hypot(o.x[m] - o.x[i], o.y[m] - o.y[i]) < byFlock) found = true;
         }
         if (found) break;
       }
@@ -611,9 +706,26 @@ export class Run {
         if (d < bd) { bd = d; best = j; }
       }
     }
+    // an inflatable sheep nearer than any real one draws it (and they are not counted as taken)
+    if (!big) {
+      const k = this.nearestDecoy(x, y, Math.min(bd, 16));
+      if (k >= 0) return -10 - k;
+    }
     const dg = Math.hypot(g.x - x, g.y - y);
     if (best >= 0 && !(g.ko <= 0 && dg < 4 && dg < bd)) return best;
     return -1;
+  }
+
+  private nearestDecoy(x: number, y: number, within: number): number {
+    const d = this.decoys;
+    let best = -1;
+    let bd = within;
+    for (let k = 0; k < d.cap; k++) {
+      if (!d.alive[k]) continue;
+      const dist = Math.hypot(d.x[k] - x, d.y[k] - y);
+      if (dist < bd) { bd = dist; best = k; }
+    }
+    return best;
   }
 
   private gloopStep(i: number, dt: number): void {
@@ -648,20 +760,26 @@ export class Run {
         tgt = e.target[i] = -1;
         e.retarget[i] = 0;
       }
+    } else if (tgt <= -10 && !this.decoys.alive[-10 - tgt]) {
+      tgt = e.target[i] = -1;
+      e.retarget[i] = 0;
     }
-    const tx = tgt >= 0 ? o.x[tgt] : g.x;
-    const ty = tgt >= 0 ? o.y[tgt] : g.y;
+    const decoy = tgt <= -10 ? -10 - tgt : -1;
+    const tx = tgt >= 0 ? o.x[tgt] : decoy >= 0 ? this.decoys.x[decoy] : g.x;
+    const ty = tgt >= 0 ? o.y[tgt] : decoy >= 0 ? this.decoys.y[decoy] : g.y;
     const dx = tx - e.x[i];
     const dy = ty - e.y[i];
     const d = Math.hypot(dx, dy);
     if (d > 1e-3) {
-      e.vx[i] = (dx / d) * spec.speed;
-      e.vy[i] = (dy / d) * spec.speed;
+      e.vx[i] = (dx / d) * spec.speed * e.slow[i];
+      e.vy[i] = (dy / d) * spec.speed * e.slow[i];
     }
     e.x[i] += (e.vx[i] + e.kx[i]) * dt;
     e.y[i] += (e.vy[i] + e.ky[i]) * dt;
     if (reeling) return;
-    if (tgt === -1) {
+    if (decoy >= 0) {
+      if (d < spec.radius + 0.6) this.burst(decoy);
+    } else if (tgt === -1) {
       if (d < RUN.gafoop.radius + spec.radius && this.hurtGafoop()) {
         this.knock(i, -dx / (d || 1), -dy / (d || 1), 2);
         e.t[i] = -0.6;
@@ -689,6 +807,7 @@ export class Run {
       this.model.hold(j);
       this.status[j] = Sheep.Grabbed;
       this.setExit(j);
+      this.tagIn[j] = 0;
       this.emit({ kind: 'grab', sheep: j });
       this.first('grab');
     }
@@ -716,6 +835,43 @@ export class Run {
     this.startles.push({ id: 0, kind: 'startle', x, y, strength: 1, radius: 4 });
     this.stats.torn++;
     this.emit({ kind: 'fleece', sheep: j, x, y });
+    // Fleece Flak: the fleece goes off like a firework
+    const flak = this.lvl('flak');
+    if (flak) {
+      const F = STATS.flak(flak);
+      this.area(x, y, F.radius * this.wide, F.damage * this.might, 2.5);
+      this.emit({ kind: 'flak', x, y, r: F.radius * this.wide });
+    }
+  }
+
+  /** Ear tags: every monster holding sheep j is zapped (and with luck deported on the spot). */
+  private zapGrabbers(j: number, damage: number, deport: number): void {
+    const e = this.enemies;
+    const o = this.model.out;
+    for (let i = 0; i < e.high; i++) {
+      if (!e.alive[i] || e.carry[i] !== j || e.phase[i] !== Phase.Attached) continue;
+      this.emit({ kind: 'zap', ax: o.x[j], ay: o.y[j], bx: e.x[i], by: e.y[i] });
+      if (deport > 0 && this.rng.next() < deport) this.kill(i);
+      else this.hurt(i, damage);
+    }
+  }
+
+  /** Stubborn Breed: sheep j kicks free, and the ones holding it stagger back. */
+  private kickFree(j: number): void {
+    const e = this.enemies;
+    const o = this.model.out;
+    const held: number[] = [];
+    for (let i = 0; i < e.high; i++) if (e.alive[i] && e.carry[i] === j) held.push(i);
+    this.free(j, false);
+    this.stats.rescued++;
+    for (const i of held) {
+      const dx = e.x[i] - o.x[j];
+      const dy = e.y[i] - o.y[j];
+      const d = Math.hypot(dx, dy) || 1;
+      this.knock(i, dx / d, dy / d, 2.5);
+      if (e.kind[i] !== KIND.saucer) e.t[i] = -0.8;
+    }
+    this.emit({ kind: 'kick', sheep: j });
   }
 
   /** Where the monsters that took sheep j carry it: out over the nearest wall. */
@@ -737,12 +893,29 @@ export class Run {
     const e = this.enemies;
     const o = this.model.out;
     const slow = 1 - 0.12 * this.lvl('fleece');
+    const tags = this.lvl('tags');
+    const kick = [0, 0.08, 0.14, 0.2, 0.28][this.lvl('stubborn')];
     for (let j = 0; j < this.n; j++) {
       const s = this.status[j];
       if (s !== Sheep.Grabbed && s !== Sheep.Carried) continue;
       if (this.handCount[j] === 0) {
         this.free(j, true);
         continue;
+      }
+      // Stubborn Breed: it may kick itself free
+      if (kick && this.rng.next() < kick * dt) {
+        this.kickFree(j);
+        continue;
+      }
+      // Ear-Tag Zappers: whatever holds it is zapped
+      if (tags) {
+        this.tagIn[j] -= dt;
+        if (this.tagIn[j] <= 0) {
+          const T = STATS.tags(tags);
+          this.tagIn[j] += T.every * this.quick;
+          this.zapGrabbers(j, T.damage * this.might, T.deport);
+          if (this.status[j] !== Sheep.Grabbed && this.status[j] !== Sheep.Carried) continue;
+        }
       }
       const power = this.liftSum[j];
       const lifted = power >= 0.999;
@@ -789,6 +962,7 @@ export class Run {
     this.status[j] = Sheep.Lost;
     this.lift[j] = 0;
     this.collar[j] = 0;
+    this.horns[j] = 0;
     this.model.place(j, RUN.offstage.x, RUN.offstage.y);
     this.stats.lost++;
     const d = this.director;
@@ -1011,13 +1185,27 @@ export class Run {
       s.radius = spec.threat.radius;
       out.push(s);
     }
-    // Gafoop: the flock moves off as he comes; with the bucket he is mostly forgiven, and called to
+    // Gafoop: the flock moves off as he comes; with a bucket held he is mostly forgiven, and called to
     const g = this.gafoop;
     if (g.ko <= 0) {
-      const p = this.input.bucket ? RUN.withBucket : RUN.presence;
+      const bucket = this.input.bucket ? this.lvl('bucket') : 0;
+      const p = bucket ? RUN.withBucket : RUN.presence;
       out.push({ id: 1, kind: 'threat', x: g.x, y: g.y, strength: p.strength, radius: p.radius });
-      if (this.input.bucket) out.push({ id: 2, kind: 'lure', x: g.x, y: g.y, strength: RUN.bucket.strength, radius: RUN.bucket.radius });
+      if (bucket) {
+        const B = STATS.bucket(bucket);
+        out.push({ id: 2, kind: 'lure', x: g.x, y: g.y, strength: B.strength, radius: B.radius });
+      }
     }
+    // the dog whistle calls everyone back to the middle; salt licks draw; collies push
+    const c = this.call;
+    if (this.time < c.until) out.push({ id: 3, kind: 'lure', x: c.x, y: c.y, strength: c.strength, radius: c.radius });
+    const lick = STATS.lick(Math.max(1, this.lvl('lick')));
+    const L = this.licks;
+    for (let k = 0; k < L.cap; k++) {
+      if (L.alive[k]) out.push({ id: 5 + k, kind: 'lure', x: L.x[k], y: L.y[k], strength: lick.strength, radius: lick.radius });
+    }
+    const push = STATS.collie(1).push;
+    this.collies.forEach((d, k) => out.push({ id: 7 + k, kind: 'threat', x: d.x, y: d.y, strength: push.strength, radius: push.radius }));
     for (const s of this.startles) out.push(s);
     this.startles.length = 0;
     this.model.step(out);
@@ -1119,28 +1307,33 @@ export class Run {
     }
   }
 
-  /** Wool grows on fed, calm sheep (the booths shear it). */
+  /** Wool grows on fed, calm sheep (the booths shear it); faster at a salt lick. */
   private woolStep(dt: number): void {
     const o = this.model.out;
     const W = RUN.wool;
     const rate = (1 + 0.2 * this.lvl('merino')) / W.grow;
     const fade = Math.exp(-dt / W.forget);
+    const cost = W.cost * (1 - 0.25 * this.lvl('calm'));
+    const L = this.licks;
+    const lick = STATS.lick(Math.max(1, this.lvl('lick'))).wool;
     for (let j = 0; j < this.n; j++) {
       if (this.status[j] !== Sheep.Flock) continue;
       this.stress[j] = Math.max(this.stress[j] * fade, o.fear[j]);
       const h = this.options.grazing ? o.hunger[j] : 0;
       const fed = h < W.hungry ? 1 : Math.max(0, (1 - h) / (1 - W.hungry));
-      this.wool[j] = Math.min(1, this.wool[j] + rate * fed * (1 - W.cost * this.stress[j]) * dt);
+      let bonus = 1;
+      for (let k = 0; k < L.cap; k++) if (L.alive[k] && Math.abs(o.x[j] - L.x[k]) < 3 && Math.abs(o.y[j] - L.y[k]) < 3) bonus = 1 + lick;
+      this.wool[j] = Math.min(1, this.wool[j] + rate * bonus * fed * (1 - cost * this.stress[j]) * dt);
     }
   }
 
   // ------------------------------------------------------------------ weapons
 
-  private hurt(i: number, damage: number): void {
+  private hurt(i: number, damage: number, flash = true): void {
     const e = this.enemies;
     if (!e.alive[i]) return;
     e.hp[i] -= damage;
-    e.flash[i] = 0.12;
+    if (flash) e.flash[i] = 0.12;
     if (e.hp[i] <= 0) this.kill(i);
   }
 
@@ -1196,8 +1389,10 @@ export class Run {
   private weaponStep(dt: number): void {
     const g = this.gafoop;
     if (g.ko > 0) return;
-    const might = 1 + 0.1 * this.lvl('medal');
-    const quick = 1 - 0.08 * this.lvl('expedite');
+    const might = this.might;
+    const quick = this.quick;
+    const wide = this.wide;
+    const extra = this.extra;
     const cd = this.cooldown;
     const e = this.enemies;
     const o = this.model.out;
@@ -1208,8 +1403,8 @@ export class Run {
       if (cd.stamp <= 0) {
         const S = STATS.stamp(stamp);
         cd.stamp += S.cooldown * quick;
-        this.area(g.x, g.y, S.radius, S.damage * might, S.knock);
-        this.emit({ kind: 'stamp', x: g.x, y: g.y, r: S.radius });
+        this.area(g.x, g.y, S.radius * wide, S.damage * might, S.knock);
+        this.emit({ kind: 'stamp', x: g.x, y: g.y, r: S.radius * wide });
       }
     }
 
@@ -1228,7 +1423,8 @@ export class Run {
         if (best >= 0) {
           cd.stapler += S.cooldown * quick;
           const a0 = Math.atan2(e.y[best] - g.y, e.x[best] - g.x);
-          for (let k = 0; k < S.count; k++) this.fire(g.x, g.y, a0 + (k - (S.count - 1) / 2) * 0.14, S.speed, S.damage * might, S.pierce, S.life);
+          const n = S.count + extra;
+          for (let k = 0; k < n; k++) this.fire(g.x, g.y, a0 + (k - (n - 1) / 2) * 0.14, S.speed, S.damage * might, S.pierce, S.life);
           this.emit({ kind: 'staple' });
         } else cd.stapler = 0;
       }
@@ -1239,8 +1435,8 @@ export class Run {
       const S = STATS.shredder(shredder);
       for (let b = 0; b < S.blades; b++) {
         const a = this.time * S.spin + (b / S.blades) * Math.PI * 2;
-        const bx = g.x + Math.cos(a) * S.radius;
-        const by = g.y + Math.sin(a) * S.radius;
+        const bx = g.x + Math.cos(a) * S.radius * wide;
+        const by = g.y + Math.sin(a) * S.radius * wide;
         this.grid.near(bx, by, 2, (i) => {
           if (!e.alive[i] || e.shred[i] > 0) return;
           if (Math.hypot(e.x[i] - bx, e.y[i] - by) > 0.55 + ENEMY[KINDS[e.kind[i]]].radius) return;
@@ -1254,7 +1450,8 @@ export class Run {
     if (crook) {
       cd.crook -= dt;
       if (cd.crook <= 0) {
-        const S = STATS.crook(crook);
+        const C = STATS.crook(crook);
+        const S = { ...C, range: C.range * wide };
         cd.crook += S.cooldown * quick;
         const inArc = (x: number, y: number, r: number) => {
           const dx = x - g.x;
@@ -1299,8 +1496,8 @@ export class Run {
         this.bellIn[j] -= dt;
         if (this.bellIn[j] > 0) continue;
         this.bellIn[j] += S.every * quick;
-        this.area(o.x[j], o.y[j], S.radius, S.damage * might, S.knock);
-        this.emit({ kind: 'bell', x: o.x[j], y: o.y[j], r: S.radius });
+        this.area(o.x[j], o.y[j], S.radius * wide, S.damage * might, S.knock);
+        this.emit({ kind: 'bell', x: o.x[j], y: o.y[j], r: S.radius * wide });
       }
     }
 
@@ -1312,7 +1509,7 @@ export class Run {
         cd.static += S.cooldown * quick;
         const flock: number[] = [];
         for (let j = 0; j < this.n; j++) if (this.status[j] === Sheep.Flock) flock.push(j);
-        for (let k = 0; k < S.arcs && flock.length > 1; k++) {
+        for (let k = 0; k < S.arcs + extra && flock.length > 1; k++) {
           const a = flock[Math.floor(this.rng.next() * flock.length)];
           // a neighbour close enough to arc to, looked for from a random place in the flock
           const off = Math.floor(this.rng.next() * flock.length);
@@ -1327,6 +1524,595 @@ export class Run {
           this.emit({ kind: 'zap', ax: o.x[a], ay: o.y[a], bx: o.x[b], by: o.y[b] });
         }
       }
+    }
+
+    const planes = this.lvl('planes');
+    if (planes) {
+      cd.planes -= dt;
+      if (cd.planes <= 0) {
+        const S = STATS.planes(planes);
+        const targets = this.planeTargets(S.count + extra);
+        if (targets.length) {
+          cd.planes += S.cooldown * quick;
+          targets.forEach((i, k) => {
+            const a = Math.atan2(e.y[i] - g.y, e.x[i] - g.x) + (k - (targets.length - 1) / 2) * 0.6;
+            this.launch(g.x, g.y, a, i, S.speed, S.damage * might, S.pierce, S.life);
+          });
+          this.emit({ kind: 'plane' });
+        } else cd.planes = 0;
+      }
+    }
+
+    const punch = this.lvl('punch');
+    if (punch) {
+      cd.punch -= dt;
+      if (cd.punch <= 0) {
+        const S = STATS.punch(punch);
+        // the toughest monsters in reach
+        const hit: number[] = [];
+        for (let n = 0; n < S.count; n++) {
+          let best = -1;
+          let most = 0;
+          this.grid.near(g.x, g.y, S.range, (i) => {
+            if (!e.alive[i] || hit.includes(i) || Math.hypot(e.x[i] - g.x, e.y[i] - g.y) > S.range) return;
+            if (e.hp[i] > most) { most = e.hp[i]; best = i; }
+          });
+          if (best < 0) break;
+          hit.push(best);
+        }
+        if (hit.length) {
+          cd.punch += S.cooldown * quick;
+          for (const i of hit) {
+            this.emit({ kind: 'punch', x: e.x[i], y: e.y[i] });
+            this.hurt(i, S.damage * might);
+          }
+        } else cd.punch = 0;
+      }
+    }
+
+    const cabinet = this.lvl('cabinet');
+    if (cabinet) {
+      cd.cabinet -= dt;
+      if (cd.cabinet <= 0) {
+        const S = STATS.cabinet(cabinet);
+        const spots = this.crowds(S.count + extra, S.range, S.radius * wide);
+        if (spots.length) {
+          cd.cabinet += S.cooldown * quick;
+          for (const p of spots) this.dropCabinet(p.x, p.y, S.radius * wide, S.damage * might);
+        } else cd.cabinet = 0.5;
+      }
+    }
+
+    const rams = this.lvl('rams');
+    if (rams) {
+      const S = STATS.rams(rams);
+      // horns on the flock: any lost go to sheep without them
+      let worn = 0;
+      for (let j = 0; j < this.n; j++) if (this.horns[j] && this.status[j] === Sheep.Flock) worn++;
+      for (let j = this.n - 1; j >= 0 && worn < S.rams; j--) {
+        if (this.status[j] !== Sheep.Flock || this.horns[j]) continue;
+        this.horns[j] = 1;
+        this.buttIn[j] = 0;
+        worn++;
+      }
+      const reach = S.reach * wide;
+      for (let j = 0; j < this.n; j++) {
+        if (!this.horns[j] || this.status[j] !== Sheep.Flock) continue;
+        this.buttIn[j] -= dt;
+        if (this.buttIn[j] > 0) continue;
+        let best = -1;
+        let bd = reach;
+        this.grid.near(o.x[j], o.y[j], reach + 1, (i) => {
+          if (!e.alive[i] || e.kind[i] === KIND.saucer) return;
+          const d = Math.hypot(e.x[i] - o.x[j], e.y[i] - o.y[j]) - ENEMY[KINDS[e.kind[i]]].radius;
+          if (d < bd) { bd = d; best = i; }
+        });
+        if (best < 0) {
+          this.buttIn[j] = 0;
+          continue;
+        }
+        this.buttIn[j] = S.every * quick;
+        const dx = e.x[best] - o.x[j];
+        const dy = e.y[best] - o.y[j];
+        const d = Math.hypot(dx, dy) || 1;
+        this.emit({ kind: 'butt', x: (e.x[best] + o.x[j]) / 2, y: (e.y[best] + o.y[j]) / 2 });
+        this.hurt(best, S.damage * might);
+        if (e.alive[best]) this.knock(best, dx / d, dy / d, S.knock);
+      }
+    }
+
+    const flak = this.lvl('flak');
+    if (flak) {
+      cd.flak -= dt;
+      if (cd.flak <= 0) {
+        const S = STATS.flak(flak);
+        cd.flak += S.every * quick;
+        // sheep in a panic shed tufts that pop
+        let left = S.tufts;
+        const off = Math.floor(this.rng.next() * this.n);
+        for (let q = 0; q < this.n && left > 0; q++) {
+          const j = (q + off) % this.n;
+          if (this.status[j] !== Sheep.Flock || o.state[j] !== SheepState.Run) continue;
+          left--;
+          this.area(o.x[j], o.y[j], 1.5 * wide, S.damage * 0.5 * might, 1);
+          this.emit({ kind: 'flak', x: o.x[j], y: o.y[j], r: 1.5 * wide });
+        }
+      }
+    }
+  }
+
+  /**
+   * Who the paper planes go for, most urgent first: monsters holding sheep, saucers marking
+   * one, then those after a sheep, nearest it first; up to `n` of them, repeated if there are
+   * fewer.
+   */
+  private planeTargets(n: number): number[] {
+    const e = this.enemies;
+    const o = this.model.out;
+    const g = this.gafoop;
+    const scored: { i: number; s: number }[] = [];
+    for (let i = 0; i < e.high; i++) {
+      if (!e.alive[i]) continue;
+      let s: number;
+      if (e.phase[i] === Phase.Attached || e.phase[i] === Phase.Beam || e.phase[i] === Phase.Telegraph) s = 0;
+      else if (e.target[i] >= 0 && this.status[e.target[i]] === Sheep.Flock) s = Math.hypot(e.x[i] - o.x[e.target[i]], e.y[i] - o.y[e.target[i]]);
+      else s = 30 + Math.hypot(e.x[i] - g.x, e.y[i] - g.y);
+      if (Math.hypot(e.x[i] - g.x, e.y[i] - g.y) > 30) continue;
+      scored.push({ i, s });
+    }
+    scored.sort((a, b) => a.s - b.s || a.i - b.i);
+    const out: number[] = [];
+    for (let k = 0; k < n && scored.length; k++) out.push(scored[k % scored.length].i);
+    return out;
+  }
+
+  /** The middles of up to `n` of the thickest crowds of monsters within `range` of Gafoop. */
+  private crowds(n: number, range: number, r: number): { x: number; y: number }[] {
+    const e = this.enemies;
+    const g = this.gafoop;
+    const spots: { x: number; y: number }[] = [];
+    for (let k = 0; k < n; k++) {
+      let best = -1;
+      let most = 0;
+      let seen = 0;
+      for (let i = 0; i < e.high && seen < 160; i++) {
+        if (!e.alive[i] || e.kind[i] === KIND.saucer || Math.hypot(e.x[i] - g.x, e.y[i] - g.y) > range) continue;
+        if (spots.some((p) => Math.hypot(p.x - e.x[i], p.y - e.y[i]) < r * 2)) continue;
+        seen++;
+        let c = 0;
+        this.grid.near(e.x[i], e.y[i], r, (q) => {
+          if (e.alive[q] && e.kind[q] !== KIND.saucer && Math.hypot(e.x[q] - e.x[i], e.y[q] - e.y[i]) < r) c++;
+        });
+        if (c > most) { most = c; best = i; }
+      }
+      if (best < 0) break;
+      spots.push({ x: e.x[best], y: e.y[best] });
+    }
+    return spots;
+  }
+
+  /** Blorp drops a filing cabinet on (x, y): it lands after `RUN`'s fall time. */
+  private dropCabinet(x: number, y: number, radius: number, damage: number): void {
+    const c = this.cabinets;
+    let k = -1;
+    for (let q = 0; q < c.cap; q++) if (!c.alive[q]) { k = q; break; }
+    if (k < 0) return;
+    c.alive[k] = 1;
+    c.x[k] = x;
+    c.y[k] = y;
+    c.t[k] = 0;
+    c.radius[k] = radius;
+    c.damage[k] = damage;
+    this.emit({ kind: 'drop', x, y });
+  }
+
+  private cabinetStep(dt: number): void {
+    const c = this.cabinets;
+    const fall = STATS.cabinet(1).fall;
+    for (let k = 0; k < c.cap; k++) {
+      if (!c.alive[k]) continue;
+      const before = c.t[k];
+      c.t[k] += dt;
+      if (before < fall && c.t[k] >= fall) {
+        this.area(c.x[k], c.y[k], c.radius[k], c.damage[k], 2.5);
+        this.startles.push({ id: 0, kind: 'startle', x: c.x[k], y: c.y[k], strength: 0.8, radius: c.radius[k] + 1.5 });
+        this.emit({ kind: 'cabinet', x: c.x[k], y: c.y[k], r: c.radius[k] });
+      }
+      // it lies there a moment, then the Bureau files it
+      if (c.t[k] > fall + 1.4) c.alive[k] = 0;
+    }
+  }
+
+  /** A paper plane from (x, y), heading `angle`, homing on monster `target`. */
+  private launch(x: number, y: number, angle: number, target: number, speed: number, damage: number, pierce: number, life: number): void {
+    const p = this.planes;
+    let k = -1;
+    for (let q = 0; q < p.high; q++) if (!p.alive[q]) { k = q; break; }
+    if (k < 0) {
+      if (p.high >= p.cap) return;
+      k = p.high++;
+    }
+    p.alive[k] = 1;
+    p.x[k] = p.px[k] = x;
+    p.y[k] = p.py[k] = y;
+    p.vx[k] = Math.cos(angle) * speed;
+    p.vy[k] = Math.sin(angle) * speed;
+    p.target[k] = target;
+    p.tuid[k] = this.enemies.uid[target];
+    p.damage[k] = damage;
+    p.pierce[k] = pierce;
+    p.life[k] = life;
+    p.hit[k] = -1;
+  }
+
+  /** Planes turn toward their monster (a new one, if it is gone) and fly on. */
+  private planeStep(dt: number): void {
+    const p = this.planes;
+    const e = this.enemies;
+    for (let k = 0; k < p.high; k++) {
+      if (!p.alive[k]) continue;
+      p.life[k] -= dt;
+      if (p.life[k] <= 0) {
+        p.alive[k] = 0;
+        continue;
+      }
+      let t = p.target[k];
+      if (t < 0 || !e.alive[t] || e.uid[t] !== p.tuid[k]) {
+        // the nearest monster ahead of it
+        t = -1;
+        let bd = 12;
+        this.grid.near(p.x[k], p.y[k], 12, (i) => {
+          if (!e.alive[i] || e.uid[i] === p.hit[k]) return;
+          const d = Math.hypot(e.x[i] - p.x[k], e.y[i] - p.y[k]);
+          if (d < bd) { bd = d; t = i; }
+        });
+        p.target[k] = t;
+        p.tuid[k] = t >= 0 ? e.uid[t] : -1;
+      }
+      const speed = Math.hypot(p.vx[k], p.vy[k]);
+      if (t >= 0) {
+        const want = Math.atan2(e.y[t] - p.y[k], e.x[t] - p.x[k]);
+        const now = Math.atan2(p.vy[k], p.vx[k]);
+        let da = want - now;
+        da = Math.atan2(Math.sin(da), Math.cos(da));
+        const turn = STATS.planes(1).turn * dt;
+        const a = now + Math.max(-turn, Math.min(turn, da));
+        p.vx[k] = Math.cos(a) * speed;
+        p.vy[k] = Math.sin(a) * speed;
+      }
+      p.x[k] += p.vx[k] * dt;
+      p.y[k] += p.vy[k] * dt;
+      this.grid.near(p.x[k], p.y[k], 2, (i) => {
+        if (!p.alive[k] || !e.alive[i] || e.uid[i] === p.hit[k]) return;
+        if (Math.hypot(e.x[i] - p.x[k], e.y[i] - p.y[k]) > 0.35 + ENEMY[KINDS[e.kind[i]]].radius) return;
+        p.hit[k] = e.uid[i];
+        this.hurt(i, p.damage[k]);
+        if (p.pierce[k] === 0) p.alive[k] = 0;
+        else {
+          p.pierce[k]--;
+          p.target[k] = -1;
+        }
+      });
+    }
+  }
+
+  /** Red tape: Gafoop trails it; anything on it is slowed and hurt. */
+  private tapeStep(dt: number): void {
+    const e = this.enemies;
+    for (let i = 0; i < e.high; i++) e.slow[i] = 1;
+    const t = this.tape;
+    const l = this.lvl('tape');
+    const g = this.gafoop;
+    const S = STATS.tape(Math.max(1, l));
+    const last = this.tapeLast;
+    if (l && g.ko <= 0 && Math.hypot(g.x - last.x, g.y - last.y) >= S.every) {
+      const k = t.next;
+      t.next = (t.next + 1) % t.cap;
+      // joined to the piece before, if that was laid just now
+      t.prev[k] = last.k >= 0 && t.alive[last.k] && this.time - t.born[last.k] < 0.8 ? last.k : -1;
+      t.alive[k] = 1;
+      t.x[k] = g.x;
+      t.y[k] = g.y;
+      t.born[k] = this.time;
+      this.tapeLast = { x: g.x, y: g.y, k };
+    }
+    this.taped.fill(0);
+    const hurt = S.dps * this.might * dt;
+    for (let k = 0; k < t.cap; k++) {
+      if (!t.alive[k]) continue;
+      if (this.time - t.born[k] > S.life) {
+        t.alive[k] = 0;
+        continue;
+      }
+      this.grid.near(t.x[k], t.y[k], S.reach + 1, (i) => {
+        if (!e.alive[i] || e.kind[i] === KIND.saucer || this.taped[i]) return;
+        if (Math.hypot(e.x[i] - t.x[k], e.y[i] - t.y[k]) > S.reach + ENEMY[KINDS[e.kind[i]]].radius) return;
+        this.taped[i] = 1;
+        e.slow[i] = S.slow;
+        this.hurt(i, hurt, false);
+      });
+    }
+  }
+
+  /**
+   * The tools: gadgets that work on the flock and the field rather than on monsters (the feed
+   * bucket is read where the flock is stepped).
+   */
+  private toolStep(dt: number): void {
+    const g = this.gafoop;
+    const e = this.enemies;
+    const o = this.model.out;
+    const cd = this.cooldown;
+    const quick = this.quick;
+    const f = this.flockCentre();
+
+    const whistle = this.lvl('whistle');
+    if (whistle) {
+      cd.whistle -= dt;
+      if (cd.whistle <= 0) {
+        const S = STATS.whistle(whistle);
+        cd.whistle = S.cooldown * quick;
+        if (f.n > 1) {
+          this.call = { x: f.x, y: f.y, until: this.time + S.lasts, radius: S.radius, strength: S.strength };
+          this.emit({ kind: 'whistle', x: f.x, y: f.y, r: S.radius });
+        }
+      }
+    }
+
+    const woof = this.lvl('woof');
+    if (woof && g.ko <= 0) {
+      cd.woof -= dt;
+      if (cd.woof <= 0) {
+        const S = STATS.woof(woof);
+        const r = S.radius * this.wide;
+        // it barks when there is something to bark at
+        const near: number[] = [];
+        this.grid.near(g.x, g.y, r + 1.6, (i) => {
+          if (e.alive[i] && e.kind[i] !== KIND.saucer && Math.hypot(e.x[i] - g.x, e.y[i] - g.y) < r + ENEMY[KINDS[e.kind[i]]].radius) near.push(i);
+        });
+        if (near.length) {
+          cd.woof = S.cooldown * quick;
+          for (const i of near) {
+            // grabbers let go of their sheep
+            if (e.phase[i] === Phase.Attached) {
+              e.phase[i] = Phase.Seek;
+              e.carry[i] = -1;
+            }
+            const dx = e.x[i] - g.x;
+            const dy = e.y[i] - g.y;
+            const d = Math.hypot(dx, dy) || 1;
+            this.hurt(i, S.damage * this.might);
+            if (!e.alive[i]) continue;
+            this.knock(i, dx / d, dy / d, S.knock);
+            e.t[i] = -S.dizzy;
+            e.retarget[i] = S.dizzy;
+          }
+          if (S.startle) this.startles.push({ id: 0, kind: 'startle', x: g.x, y: g.y, strength: 1, radius: r + 2 });
+          this.emit({ kind: 'woof', x: g.x, y: g.y, r });
+        } else cd.woof = 0;
+      }
+    }
+
+    const collie = this.lvl('collie');
+    if (collie) {
+      const S = STATS.collie(collie);
+      while (this.collies.length < S.collies) {
+        const a = this.collies.length * Math.PI;
+        this.collies.push({ x: g.x, y: g.y, px: g.x, py: g.y, vx: 0, vy: 0, orbit: a, bite: 0 });
+      }
+      const ring = Math.sqrt(Math.max(1, f.n)) * 0.9 + 3.5;
+      this.collies.forEach((c, k) => {
+        // a monster at the flock: after it; otherwise round the flock
+        let prey = -1;
+        let pd = 12;
+        this.grid.near(c.x, c.y, 12, (i) => {
+          if (!e.alive[i] || e.kind[i] === KIND.saucer || Math.hypot(e.x[i] - f.x, e.y[i] - f.y) > ring + 4) return;
+          const d = Math.hypot(e.x[i] - c.x, e.y[i] - c.y);
+          if (d < pd) { pd = d; prey = i; }
+        });
+        let tx: number;
+        let ty: number;
+        if (prey >= 0) {
+          tx = e.x[prey];
+          ty = e.y[prey];
+        } else {
+          c.orbit += (dt * S.speed * 0.7) / ring;
+          const a = c.orbit + k * Math.PI;
+          tx = f.x + Math.cos(a) * ring;
+          ty = f.y + Math.sin(a) * ring;
+        }
+        const dx = tx - c.x;
+        const dy = ty - c.y;
+        const d = Math.hypot(dx, dy);
+        const v = d > 0.2 ? Math.min(S.speed, d * 4) : 0;
+        const kk = 1 - Math.exp(-dt * 10);
+        c.vx += ((d > 1e-3 ? (dx / d) * v : 0) - c.vx) * kk;
+        c.vy += ((d > 1e-3 ? (dy / d) * v : 0) - c.vy) * kk;
+        c.x += c.vx * dt;
+        c.y += c.vy * dt;
+        c.bite -= dt;
+        if (c.bite <= 0) {
+          let hit = false;
+          this.grid.near(c.x, c.y, S.reach + 1.6, (i) => {
+            if (hit || !e.alive[i] || e.kind[i] === KIND.saucer) return;
+            const dd = Math.hypot(e.x[i] - c.x, e.y[i] - c.y);
+            if (dd > S.reach + ENEMY[KINDS[e.kind[i]]].radius) return;
+            hit = true;
+            this.hurt(i, S.damage * this.might);
+            if (e.alive[i]) this.knock(i, (e.x[i] - c.x) / (dd || 1), (e.y[i] - c.y) / (dd || 1), 1.5);
+          });
+          if (hit) {
+            c.bite = S.every * quick;
+            this.emit({ kind: 'bite', x: c.x, y: c.y });
+          }
+        }
+      });
+    }
+
+    const L = this.licks;
+    for (let k = 0; k < L.cap; k++) {
+      if (!L.alive[k]) continue;
+      L.life[k] -= dt;
+      L.age[k] += dt;
+      if (L.life[k] <= 0) L.alive[k] = 0;
+    }
+    const lick = this.lvl('lick');
+    if (lick) {
+      cd.lick -= dt;
+      if (cd.lick <= 0) {
+        const S = STATS.lick(lick);
+        if (g.ko <= 0 && f.n > 0 && Math.hypot(g.x - f.x, g.y - f.y) < 15) {
+          cd.lick = S.cooldown * quick;
+          // a free spot, or the oldest goes
+          let k = -1;
+          for (let q = 0; q < S.count; q++) if (!L.alive[q]) { k = q; break; }
+          if (k < 0) for (let q = 0; q < S.count; q++) if (k < 0 || L.age[q] > L.age[k]) k = q;
+          L.alive[k] = 1;
+          L.x[k] = Math.max(2, Math.min(FIELD.width - 2, g.x));
+          L.y[k] = Math.max(2, Math.min(FIELD.height - 2, g.y));
+          L.life[k] = S.lasts;
+          L.age[k] = 0;
+          this.emit({ kind: 'lick', x: L.x[k], y: L.y[k] });
+        } else cd.lick = 1;
+      }
+    }
+
+    const D = this.decoys;
+    for (let k = 0; k < D.cap; k++) {
+      if (!D.alive[k]) continue;
+      D.life[k] -= dt;
+      D.age[k] += dt;
+      if (D.life[k] <= 0) D.alive[k] = 0;
+    }
+    const decoys = this.lvl('decoys');
+    if (decoys && f.n > 0) {
+      cd.decoys -= dt;
+      if (cd.decoys <= 0) {
+        const S = STATS.decoys(decoys);
+        cd.decoys = S.cooldown * quick;
+        let alive = 0;
+        for (let k = 0; k < D.cap; k++) alive += D.alive[k];
+        let k = -1;
+        for (let q = 0; q < D.cap; q++) if (!D.alive[q]) { k = q; break; }
+        if (alive < S.most && k >= 0) {
+          // at the edge of the flock, on the side the nearest monster is coming from
+          let a = this.rng.range(0, Math.PI * 2);
+          let bd = 30;
+          for (let i = 0; i < e.high; i++) {
+            if (!e.alive[i] || e.kind[i] === KIND.saucer) continue;
+            const d = Math.hypot(e.x[i] - f.x, e.y[i] - f.y);
+            if (d < bd) { bd = d; a = Math.atan2(e.y[i] - f.y, e.x[i] - f.x) + this.rng.range(-0.5, 0.5); }
+          }
+          const r = Math.sqrt(f.n) * 0.9 + 2.5;
+          D.alive[k] = 1;
+          D.x[k] = Math.max(2, Math.min(FIELD.width - 2, f.x + Math.cos(a) * r));
+          D.y[k] = Math.max(2, Math.min(FIELD.height - 2, f.y + Math.sin(a) * r));
+          D.life[k] = S.lasts;
+          D.age[k] = 0;
+          this.emit({ kind: 'decoy', x: D.x[k], y: D.y[k] });
+        }
+      }
+    }
+
+    const drone = this.lvl('drone');
+    if (drone) {
+      const S = STATS.drone(drone);
+      while (this.drones.length < S.drones) this.drones.push({ x: g.x, y: g.y, px: g.x, py: g.y, target: -1, wool0: 0, cut: 0 });
+      const shearQuick = 1 + 0.3 * this.lvl('shears');
+      for (const d of this.drones) {
+        let j = d.target;
+        // its sheep taken, or in a booth: what it has cut so far still goes to Gafoop
+        if (j >= 0 && this.status[j] !== Sheep.Flock) {
+          if (d.cut > 0) this.drop(d.x, d.y, d.cut * RUN.wool.value, Pickup.Wool, true);
+          j = d.target = -1;
+        }
+        if (j < 0) {
+          // the woolliest sheep near it that no other drone has
+          let best = -1;
+          let score = -Infinity;
+          for (let q = 0; q < this.n; q++) {
+            if (this.status[q] !== Sheep.Flock || this.wool[q] < S.least || this.drones.some((x) => x.target === q)) continue;
+            const sc = this.wool[q] - Math.hypot(o.x[q] - d.x, o.y[q] - d.y) / 30;
+            if (sc > score) { score = sc; best = q; }
+          }
+          if (best >= 0) {
+            j = d.target = best;
+            d.wool0 = this.wool[best];
+            d.cut = 0;
+          }
+        }
+        const tx = j >= 0 ? o.x[j] : f.x;
+        const ty = j >= 0 ? o.y[j] : f.y;
+        const dx = tx - d.x;
+        const dy = ty - d.y;
+        const dist = Math.hypot(dx, dy);
+        const step = Math.min(dist, S.speed * dt);
+        if (dist > 1e-3) {
+          d.x += (dx / dist) * step;
+          d.y += (dy / dist) * step;
+        }
+        if (j >= 0 && dist < 1.2) {
+          // a fleece takes `shear` seconds, a little at a time (a torn one is just gone)
+          const cut = Math.min(this.wool[j], (d.wool0 / S.shear) * dt * shearQuick);
+          this.wool[j] -= cut;
+          d.cut += cut;
+          if (this.wool[j] <= 0.001) {
+            this.wool[j] = 0;
+            if (d.cut > 0) this.drop(o.x[j], o.y[j], d.cut * RUN.wool.value, Pickup.Wool, true);
+            this.stats.sheared++;
+            this.emit({ kind: 'shear', sheep: j, x: o.x[j], y: o.y[j] });
+            d.target = -1;
+          }
+        }
+      }
+    }
+  }
+
+  /** An inflatable sheep bursts: a bang that hurts and staggers whatever is round it. */
+  private burst(k: number): void {
+    const D = this.decoys;
+    if (!D.alive[k]) return;
+    D.alive[k] = 0;
+    const S = STATS.decoys(Math.max(1, this.lvl('decoys')));
+    const x = D.x[k];
+    const y = D.y[k];
+    const r = S.radius * this.wide;
+    const e = this.enemies;
+    this.area(x, y, r, S.damage * this.might, 2.5);
+    this.grid.near(x, y, r + 1.6, (i) => {
+      if (e.alive[i] && e.kind[i] !== KIND.saucer && e.phase[i] !== Phase.Attached && Math.hypot(e.x[i] - x, e.y[i] - y) < r + 1) e.t[i] = -0.8;
+    });
+    this.emit({ kind: 'burst', x, y, r });
+  }
+
+  /** The provisions that do something now and then: lambs. */
+  private provisionStep(dt: number): void {
+    const lambs = this.lvl('lambs');
+    if (!lambs) return;
+    const cd = this.cooldown;
+    cd.lambs -= dt;
+    if (cd.lambs > 0) return;
+    // a calm ewe has a lamb beside her
+    const calm: number[] = [];
+    for (let j = 0; j < this.n; j++) if (this.status[j] === Sheep.Flock && this.stress[j] < 0.5) calm.push(j);
+    if (calm.length < 2) {
+      cd.lambs = 3;
+      return;
+    }
+    cd.lambs = [30, 24, 19, 15][lambs - 1];
+    const ewe = calm[Math.floor(this.rng.next() * calm.length)];
+    const o = this.model.out;
+    for (let i = 0; i < this.n; i++) {
+      if (this.status[i] !== Sheep.Reserve) continue;
+      const x = Math.max(1, Math.min(FIELD.width - 1, o.x[ewe] + this.rng.range(-0.8, 0.8)));
+      const y = Math.max(1, Math.min(FIELD.height - 1, o.y[ewe] + this.rng.range(-0.8, 0.8)));
+      this.model.place(i, x, y);
+      this.model.release(i);
+      this.status[i] = Sheep.Flock;
+      this.wool[i] = 0.2;
+      this.stress[i] = 0;
+      this.emit({ kind: 'lamb', x, y });
+      return;
     }
   }
 
@@ -1433,7 +2219,8 @@ export class Run {
   private pickupStep(dt: number): void {
     const p = this.pickups;
     const g = this.gafoop;
-    const radius = RUN.pickup.radius;
+    const radius = RUN.pickup.radius * (1 + 0.5 * this.lvl('vacuum'));
+    const pay = 1 + 0.1 * this.lvl('expense');
     for (let k = 0; k < p.high; k++) {
       if (!p.alive[k]) continue;
       p.life[k] -= dt;
@@ -1461,9 +2248,10 @@ export class Run {
         this.emit({ kind: 'pickup', crate });
         if (crate) this.levelUp();
         else {
-          if (p.kind[k] === Pickup.Salvage) this.stats.xpKills += p.value[k];
-          else this.stats.xpWool += p.value[k];
-          this.gainXp(p.value[k]);
+          const v = p.value[k] * pay;
+          if (p.kind[k] === Pickup.Salvage) this.stats.xpKills += v;
+          else this.stats.xpWool += v;
+          this.gainXp(v);
         }
       }
     }
@@ -1490,17 +2278,28 @@ export class Run {
     if (this.pending > 0 && !this.choices && !this.over) this.choices = this.deal();
   }
 
-  /** Three cards: next levels of what Gafoop has, or new things while there are slots. */
+  /**
+   * Three cards: next levels of what Gafoop has (more likely: a build should grow), or new
+   * things while their kind has slots. Until he has a tool, one of the three is a tool.
+   */
   deal(): Card[] {
     const pool: { card: Card; w: number }[] = [];
-    const held = (kind: 'armament' | 'provision') => ITEM_IDS.filter((id) => ITEMS[id].kind === kind && this.lvl(id) > 0).length;
+    const held = (kind: ItemKind) => ITEM_IDS.filter((id) => ITEMS[id].kind === kind && this.lvl(id) > 0).length;
     for (const id of ITEM_IDS) {
       const def = ITEMS[id];
       const l = this.lvl(id);
-      if (l > 0 && l < def.max) pool.push({ card: { item: id, level: l + 1 }, w: 1.3 });
+      if (l > 0 && l < def.max) pool.push({ card: { item: id, level: l + 1 }, w: 4 });
       else if (l === 0 && held(def.kind) < SLOTS[def.kind]) pool.push({ card: { item: id, level: 1 }, w: 1 });
     }
     const cards: Card[] = [];
+    if (held('tool') === 0) {
+      const tools = pool.filter((c) => 'item' in c.card && ITEMS[c.card.item].kind === 'tool');
+      if (tools.length) {
+        const t = tools[Math.floor(this.rng.next() * tools.length)];
+        cards.push(t.card);
+        pool.splice(pool.indexOf(t), 1);
+      }
+    }
     while (cards.length < 3 && pool.length) {
       let r = this.rng.next() * pool.reduce((s, c) => s + c.w, 0);
       let k = 0;
@@ -1510,6 +2309,9 @@ export class Run {
     }
     const extras: Extra[] = ['sheep', 'snack', 'salvage'];
     for (let k = 0; cards.length < 3; k++) cards.push({ extra: extras[k] });
+    // the tool need not always be on the left
+    const k = Math.floor(this.rng.next() * cards.length);
+    [cards[0], cards[k]] = [cards[k], cards[0]];
     return cards;
   }
 
@@ -1519,20 +2321,24 @@ export class Run {
     if (!c) return;
     this.choices = null;
     this.pending = Math.max(0, this.pending - 1);
-    if ('item' in c) this.items.set(c.item, c.level);
-    else if (c.extra === 'sheep') this.addSheep(3);
+    if ('item' in c) {
+      this.items.set(c.item, c.level);
+      // a new pip of composure comes filled
+      if (c.item === 'composure') this.gafoop.composure = Math.min(this.composureMax, this.gafoop.composure + 1);
+      this.emit({ kind: 'item', id: c.item, level: c.level });
+    } else if (c.extra === 'sheep') this.addSheep(3);
     else if (c.extra === 'snack') {
-      this.gafoop.composure = RUN.gafoop.composure;
+      this.gafoop.composure = this.composureMax;
       this.gafoop.ko = 0;
     } else this.gainXp(xpToNext(this.level) / 3);
     if (this.pending > 0 && this.options.levelups === 'pause' && !this.choices) this.choices = this.deal();
   }
 
   /** The words on a card. */
-  static describe(c: Card): { name: string; lines: [string, string]; level: number; max: number; who: string } {
-    if ('extra' in c) return { name: EXTRAS[c.extra].name, lines: EXTRAS[c.extra].lines, level: 0, max: 0, who: '' };
+  static describe(c: Card): { name: string; lines: [string, string]; level: number; max: number; who: string; kind: string } {
+    if ('extra' in c) return { name: EXTRAS[c.extra].name, lines: EXTRAS[c.extra].lines, level: 0, max: 0, who: '', kind: '' };
     const def = ITEMS[c.item];
-    return { name: def.name, lines: def.lines[c.level - 1], level: c.level, max: def.max, who: def.who };
+    return { name: def.name, lines: def.lines[c.level - 1], level: c.level, max: def.max, who: def.who, kind: def.kind };
   }
 
   // ------------------------------------------------------------------ the end

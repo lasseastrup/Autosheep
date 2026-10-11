@@ -5,7 +5,7 @@ import { ditherFill, frame, panel, rect } from '../engine/ui';
 import { pixelLine } from '../game/build';
 import { bubble } from '../game/hud';
 import type { RunOptions } from './config';
-import type { ItemId } from './items';
+import type { ItemId, ItemKind } from './items';
 
 export const W = 640;
 export const H = 360;
@@ -25,6 +25,8 @@ export interface RunLayout {
   choosing: boolean;
   /** banked level-ups waiting to be opened */
   supplies: number;
+  /** Gafoop has a feed bucket (on a phone it gets a button) */
+  bucket: boolean;
   perf: boolean;
 }
 
@@ -40,9 +42,9 @@ export function runButtons(L: RunLayout): Rect[] {
       for (let k = 0; k < 3; k++) b.push({ id: `card${k}` as RunButton, x: x0 + k * (CARD.w + CARD.gap), y: CARD.y, w: CARD.w, h: CARD.h });
       return b;
     }
-    b.push({ id: 'pause', x: W - 30, y: 48, w: 24, h: 18 });
+    b.push({ id: 'pause', x: W - 30, y: 58, w: 24, h: 18 });
     if (L.supplies > 0) b.push({ id: 'supply', x: W / 2 - 70, y: H - 46, w: 140, h: 22 });
-    if (L.touch) b.push({ id: 'bucket', x: W - 70, y: H - 70, w: 64, h: 64 });
+    if (L.touch && L.bucket) b.push({ id: 'bucket', x: W - 70, y: H - 70, w: 64, h: 64 });
     if (L.touch) b.push({ id: 'zoomOut', x: 6, y: H - 30, w: 26, h: 24 }, { id: 'zoomIn', x: 36, y: H - 30, w: 26, h: 24 });
     if (L.perf) b.push({ id: 'stress', x: 6, y: 92, w: 110, h: 13 });
     return b;
@@ -73,9 +75,10 @@ export type Fx =
   | { kind: 'ring'; x: number; y: number; r: number; age: number; life: number; color: string }
   | { kind: 'zap'; ax: number; ay: number; bx: number; by: number; age: number; life: number; seed: number }
   | { kind: 'crook'; x: number; y: number; angle: number; arc: number; r: number; age: number; life: number }
-  | { kind: 'stamp'; x: number; y: number; age: number; life: number };
+  /** a word slammed down over the field: the stamp's APPROVED, a WOOF!, a PUNCHED */
+  | { kind: 'stamp'; x: number; y: number; age: number; life: number; label?: string; color?: string };
 
-export interface Card { name: string; lines: [string, string]; level: number; max: number; who: string }
+export interface Card { name: string; lines: [string, string]; level: number; max: number; who: string; kind: string }
 
 export interface RunHudState {
   layout: RunLayout;
@@ -90,7 +93,7 @@ export interface RunHudState {
   composureMax: number;
   ko: number;
   invulnerable: boolean;
-  items: { id: ItemId; level: number; max: number; kind: 'armament' | 'provision' }[];
+  items: { id: ItemId; level: number; max: number; kind: ItemKind }[];
   choices: Card[] | null;
   /** off screen: sheep being taken, strays to find, the nearest shearing booth (a woolly flock) */
   arrows: { x: number; y: number; angle: number; kind: 'taken' | 'strays' | 'booth'; n: number }[];
@@ -98,6 +101,10 @@ export interface RunHudState {
   marks: { x: number; y: number }[];
   /** the shearing booths' mouths on screen, where woolly sheep are called in from (r in metres) */
   booths: { x: number; y: number; r: number; busy: boolean }[];
+  /** red tape on the grass, in screen pixels (`fade` 1 new .. 0 about to go) */
+  tape: { ax: number; ay: number; bx: number; by: number; fade: number }[];
+  /** where filing cabinets are about to land (r in metres; k: how far down they are, 0..1) */
+  drops: { x: number; y: number; r: number; k: number }[];
   fx: Fx[];
   floaters: { text: string; x: number; y: number; age: number; color: string }[];
   bubble: { text: string; x: number; y: number; under: number } | null;
@@ -116,9 +123,16 @@ export interface RunHudState {
 }
 
 const CODES: Record<ItemId, string> = {
-  stamp: 'STAMP', stapler: 'STAPL', shredder: 'SHRED', crook: 'CROOK', bells: 'BELLS', static: 'ZAP',
-  disc: 'DISC', shears: 'SHEAR', medal: 'MEDAL', expedite: 'QUICK', fleece: 'FLEECE', merino: 'WOOL',
+  stamp: 'STAMP', stapler: 'STAPL', shredder: 'SHRED', crook: 'CROOK', planes: 'PLANE', tape: 'TAPE', punch: 'PUNCH',
+  cabinet: 'FILES', bells: 'BELLS', static: 'ZAP', rams: 'RAMS', tags: 'TAGS', flak: 'FLAK',
+  bucket: 'BUCKT', whistle: 'WHSTL', woof: 'WOOF', collie: 'DOG', lick: 'LICK', decoys: 'DECOY', drone: 'DRONE',
+  disc: 'DISC', medal: 'MEDAL', expedite: 'QUICK', triplicate: 'TRIPL', cap: 'CAP', composure: 'NERVE', vacuum: 'VACUM',
+  expense: 'EXPNS', shears: 'SHEAR', fleece: 'FLEEC', merino: 'WOOL', calm: 'CALM', lambs: 'LAMBS', stubborn: 'STUBN',
+  homing: 'HOME',
 };
+
+/** The HUD's colour for each kind of item. */
+const KIND_COLOR: Record<ItemKind, string> = { armament: C.straw, tool: C.skyLight, provision: C.mint };
 
 const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
@@ -126,6 +140,8 @@ export function drawRunHud(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState
   const L = s.layout;
   if (L.screen === 'play' || L.screen === 'paused' || L.screen === 'over') {
     drawBooths(g, s);
+    drawTape(g, s);
+    drawDrops(g, s);
     drawFx(g, f, s);
     drawMarks(g, f, s);
   }
@@ -170,26 +186,27 @@ function drawTop(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
   f.title.draw(g, String(s.flock), cx - 12, 20, { color: C.white, shadow: C.black });
   f.tiny.draw(g, 'SHEEP', cx + 44, 34, { color: C.fog, align: 'right' });
   if (s.taken > 0) f.small.draw(g, `${s.taken} BEING TAKEN`, cx, 42, { color: C.scarlet, align: 'center' });
-  // composure and what Gafoop carries
+  // composure and what Gafoop carries: armaments, tools, provisions, a row each
   const px = W - 146;
-  panel(g, px, 11, 140, 32, { fill: C.ink, border: s.ko > 0 ? C.gold : C.lilac });
+  panel(g, px, 11, 140, 41, { fill: C.ink, border: s.ko > 0 ? C.gold : C.lilac });
   for (let k = 0; k < s.composureMax; k++) {
     const on = k < s.composure;
     const bx = px + 6 + k * 11;
     rect(g, bx, 15, 9, 9, C.black);
     rect(g, bx + 1, 16, 7, 7, on ? (s.invulnerable ? C.white : C.lime) : C.coal);
   }
-  f.tiny.draw(g, 'COMPOSURE', px + 42, 16, { color: C.fog });
-  const arms = s.items.filter((i) => i.kind === 'armament');
-  const provs = s.items.filter((i) => i.kind === 'provision');
+  f.tiny.draw(g, 'COMPOSURE', px + 9 + s.composureMax * 11, 16, { color: C.fog });
   const slot = (it: (typeof s.items)[number] | undefined, x: number, y: number) => {
     rect(g, x, y, 26, 8, it ? C.coal : C.black);
     if (!it) return;
-    f.tiny.draw(g, CODES[it.id], x + 1, y, { color: it.kind === 'armament' ? C.straw : C.mint });
+    f.tiny.draw(g, CODES[it.id], x + 1, y, { color: KIND_COLOR[it.kind] });
     for (let l = 0; l < it.max; l++) rect(g, x + 1 + l * 4, y + 7, 3, 1, l < it.level ? C.white : C.stone);
   };
-  for (let k = 0; k < 5; k++) slot(arms[k], px + 4 + k * 27, 25);
-  for (let k = 0; k < 5; k++) slot(provs[k], px + 4 + k * 27, 34);
+  (['armament', 'tool', 'provision'] as ItemKind[]).forEach((kind, row) => {
+    const have = s.items.filter((i) => i.kind === kind);
+    const n = kind === 'tool' ? 3 : 5;
+    for (let k = 0; k < n; k++) slot(have[k], px + 4 + k * 27, 25 + row * 9);
+  });
 }
 
 function arrowHead(g: CanvasRenderingContext2D, x: number, y: number, angle: number, color: string): void {
@@ -253,6 +270,26 @@ function drawBooths(g: CanvasRenderingContext2D, s: RunHudState): void {
   }
 }
 
+/** Red tape: a ribbon on the grass, darker underneath, thinning out as it goes. */
+function drawTape(g: CanvasRenderingContext2D, s: RunHudState): void {
+  for (const t of s.tape) {
+    if (t.fade < 0.25 && Math.floor(s.playing * 10) % 2 === 0) continue;
+    pixelLine(g, t.ax, t.ay + 1, t.bx, t.by + 1, C.blood);
+    pixelLine(g, t.ax, t.ay, t.bx, t.by, t.fade > 0.5 ? C.scarlet : C.brick);
+  }
+}
+
+/** Where a filing cabinet is coming down: a target that closes as it falls. */
+function drawDrops(g: CanvasRenderingContext2D, s: RunHudState): void {
+  for (const d of s.drops) {
+    const r = d.r * s.ppm * (1.3 - 0.3 * d.k);
+    groundRing(g, d.x, d.y + 1, r, r * s.squash, C.black, 2);
+    groundRing(g, d.x, d.y, r, r * s.squash, Math.floor(s.playing * 12) % 2 ? C.scarlet : C.gold, 2);
+    rect(g, Math.round(d.x) - 3, Math.round(d.y), 7, 1, C.scarlet);
+    rect(g, Math.round(d.x), Math.round(d.y) - 2, 1, 5, C.scarlet);
+  }
+}
+
 function drawFx(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
   for (const e of s.fx) {
     const k = e.age / e.life;
@@ -302,12 +339,13 @@ function drawFx(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
       g.translate(Math.round(c.x), Math.round(c.y));
       g.rotate(-0.12);
       g.scale(scale, scale);
-      const label = 'APPROVED';
+      const label = e.label ?? 'APPROVED';
+      const color = e.color ?? C.scarlet;
       const tw = f.small.measure(label);
-      g.fillStyle = C.scarlet;
+      g.fillStyle = color;
       g.fillRect(-tw / 2 - 3, -6, tw + 6, 1);
       g.fillRect(-tw / 2 - 3, 6, tw + 6, 1);
-      f.small.draw(g, label, -Math.round(tw / 2), -4, { color: C.scarlet });
+      f.small.draw(g, label, -Math.round(tw / 2), -4, { color });
       g.restore();
     }
   }
@@ -323,7 +361,8 @@ function drawCards(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void 
     if (!c) return;
     const down = s.held.has(b.id);
     const isNew = c.level === 1;
-    const who = c.who === 'flock' ? 'FOR THE FLOCK' : c.who === 'gafoop' ? 'FOR GAFOOP' : c.who === 'booths' ? 'FOR THE BOOTHS' : 'FROM THE BUREAU';
+    const kind = c.kind === 'armament' ? 'ARMAMENT ' : c.kind === 'tool' ? 'TOOL ' : c.kind === 'provision' ? 'PROVISION ' : '';
+    const who = kind + (c.who === 'flock' ? 'FOR THE FLOCK' : c.who === 'gafoop' ? 'FOR GAFOOP' : c.who === 'booths' ? 'FOR THE BOOTHS' : 'FROM THE BUREAU');
     const accent = c.who === 'flock' ? C.mint : c.who === 'gafoop' ? C.straw : c.who === 'booths' ? C.skyLight : C.pinkLight;
     panel(g, b.x, b.y + (down ? 1 : 0), b.w, b.h, { fill: down ? C.coal : C.ink, border: accent, accent });
     const y = b.y + (down ? 1 : 0);
@@ -351,7 +390,9 @@ function drawHelp(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
   const lines = L.touch && s.portrait
     ? ['TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD']
     : [
-      L.touch ? 'DRAG TO FLY  -  HOLD THE BUCKET AND THE FLOCK FOLLOWS' : 'WASD OR MOUSE: FLY   HOLD CLICK OR SPACE: THE BUCKET   ESC: PAUSE',
+      L.touch
+        ? L.bucket ? 'DRAG TO FLY  -  HOLD THE BUCKET AND THE FLOCK FOLLOWS' : 'DRAG TO FLY'
+        : L.bucket ? 'WASD OR MOUSE: FLY   HOLD CLICK OR SPACE: THE BUCKET   ESC: PAUSE' : 'WASD OR MOUSE: FLY   ESC: PAUSE',
       'SHEEP MOVE AWAY FROM YOU. HERD WOOLLY ONES INTO A SHEARING BOOTH',
     ];
   const bottom = H - (L.touch ? 79 : 7);
@@ -440,7 +481,7 @@ function drawMenu(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
     f.huge.draw(g, 'PAUSED', W / 2, top + 8, { color: C.white, align: 'center', shadow: C.black });
     const lines = [
       'SHEEP MOVE AWAY FROM GAFOOP: HERD THEM FROM BEHIND.',
-      'HOLD THE BUCKET AND THEY COME TO HIM INSTEAD.',
+      'TOOLS (A FEED BUCKET, A WHISTLE, A COLLIE) HELP.',
       'WOOLLY SHEEP IN A BOOTH\'S RING ARE CALLED IN AND SHORN,',
       'ONE AT A TIME. THE WOOL IS EXPERIENCE, BUT A SHORN',
       'SHEEP HAS NO FLEECE TO TAKE A GRAB FOR IT.',

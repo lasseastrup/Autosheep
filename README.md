@@ -47,8 +47,9 @@ plays the automation valley instead of the survivors run.
 the Bureau reconvenes, in ten minutes, and every claimant in the sector wants them. Gafoop's
 stationery fires itself: a rubber stamp to start with. Fly with `WASD` (or the arrow keys, or by
 pointing the mouse). Sheep move off as Gafoop comes at them, the faster the more, so you herd
-them from behind, as a sheepdog does; hold a mouse button or `Space` for the bucket and they come
-to him instead. On a phone a thumb anywhere is a stick and the other holds BUCKET.
+them from behind, as a sheepdog does. He starts with nothing but the stamp: a feed bucket is one
+of the tools he can find, and once he has it, holding a mouse button or `Space` (on a phone, the
+BUCKET button) calls the flock to him instead. On a phone a thumb anywhere is a stick.
 
 - Purple Gloops come over the walls. In the first minute they are after Gafoop; after that,
   after sheep. One pins a sheep, three lift it and carry it off over the nearest wall; deport
@@ -63,10 +64,21 @@ to him instead. On a phone a thumb anywhere is a stick and the other holds BUCKE
   time. Its wool flies to Gafoop, and wool and the salvage monsters leave fill the requisition
   bar along the top. So a booth is income, at the price of the flock's cushion. When most of
   the flock is woolly an arrow at the screen edge points to the nearest booth.
-- Each level-up is a pick of three: Gafoop's stationery (stamp, stapler, shredder, crook), the
-  flock's gear (bell collars that ring out shockwaves, static wool that arcs lightning between
-  sheep standing close) or provisions for either. `1` `2` `3`, or click or tap a card. Big
-  Gloops drop crates, a free pick.
+- Each level-up is a pick of three from 35 items (`1` `2` `3`, or click or tap a card), in three
+  kinds with their own slots, shown top right:
+  - **Armaments** (five slots) hurt: Gafoop's stationery (stamp, stapler, shredder, crook, homing
+    paper planes, red tape that slows, a hole punch for the big ones, filing cabinets dropped
+    from orbit) and the flock's gear (bell collars, static wool, ram horns, ear tags that zap
+    grabbers, fleece that bursts like flak).
+  - **Tools** (three slots) work on the flock and the field: the feed bucket, a dog whistle that
+    calls the flock together, the Woof-Woof 3000 (a bark that blows monsters back), a clockwork
+    collie that circles the flock, salt licks it gathers at, inflatable decoy sheep that burst,
+    and a shearing drone.
+  - **Provisions** (five slots) are passive: speed, damage, cooldowns, one more of everything
+    fired, wider hits, more composure, a pickup vacuum, more experience, faster booths, thicker
+    or faster wool, calmer sheep, lambs, sheep that kick free, strays that join from further.
+
+  Until Gafoop has a tool, one card in three is a tool. Big Gloops drop crates, a free pick.
 - Stray groups graze around the meadow (arrows at the screen edge): fly near them and they join.
   Gafoop has three pips of composure; touching monsters costs one, and with none he is knocked
   out for four seconds. Lose the last sheep and the claim is dismissed.
@@ -135,6 +147,7 @@ same corner (tap it for the log). The same lines go to the browser console, pref
 | `node tools/game-shot.mjs <dir> start\|herd` | Headless game screenshots; `herd` has a scripted shepherd play the level to the end |
 | `node tools/run-shot.mjs <dir> [seconds]` | Headless screenshots of a survivors run (title, cards, then the bot flying Gafoop) |
 | `node tools/booth-shot.mjs <dir>` | Headless screenshots of a shearing booth at work, close up, and the pause screen |
+| `node tools/items-shot.mjs <dir> [seconds]` | Headless screenshots of the items at work (`ITEMS='{"planes":3,…}'`; `CLOSE=1` for a close one) and a card deal |
 | `HARNESS=1 npx vitest run tests/run-harness.test.ts` | The run harness: whole runs played by a bot, minute by minute (`SEEDS=1,2`, `OPTIONS='{"grazing":false}'`) |
 
 ## How it looks the way it looks

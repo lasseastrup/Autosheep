@@ -44,7 +44,7 @@ export class Enemies {
   phase: Uint8Array;
   /** seconds into the phase */
   t: Float32Array;
-  /** -1: Gafoop; a sheep's index; -2: nothing yet */
+  /** -1: Gafoop; a sheep's index; -2: nothing yet; -10 - k: inflatable sheep k (a decoy) */
   target: Int32Array;
   /** the sheep it holds, or -1 */
   carry: Int32Array;
@@ -54,6 +54,8 @@ export class Enemies {
   flash: Float32Array;
   /** seconds until the shredder may hit it again */
   shred: Float32Array;
+  /** how fast it may move this step (1: full speed; red tape slows it) */
+  slow: Float32Array;
   /** saucers: where they are heading, and their height */
   gx: Float32Array;
   gy: Float32Array;
@@ -75,6 +77,7 @@ export class Enemies {
     this.target = new Int32Array(cap).fill(-2);
     this.carry = new Int32Array(cap).fill(-1);
     this.retarget = f(); this.flash = f(); this.shred = f();
+    this.slow = f().fill(1);
     this.gx = f(); this.gy = f(); this.z = f();
   }
 
@@ -105,6 +108,7 @@ export class Enemies {
     this.retarget[i] = 0;
     this.flash[i] = 0;
     this.shred[i] = 0;
+    this.slow[i] = 1;
     this.gx[i] = x;
     this.gy[i] = y;
     this.z[i] = 0;
