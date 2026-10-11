@@ -74,11 +74,15 @@ export class Groups {
   update(flock: Flock, grid: UniformGrid, linkDist: number, shedTolerance: number, strayDist: number, obstacles?: Obstacles): void {
     const fences = obstacles && obstacles.count > 0 ? obstacles : null;
     const n = flock.count;
+    // Autosheep: held sheep are out of the flock: each is a group of one, and the flock's
+    // centre and size are those of the sheep in play
+    const held = flock.held;
+    const na = flock.active;
     let fx = 0;
     let fy = 0;
-    for (let i = 0; i < n; i++) { fx += flock.px[i]; fy += flock.py[i]; }
-    this.flockX = fx / Math.max(1, n);
-    this.flockY = fy / Math.max(1, n);
+    for (let i = 0; i < n; i++) if (!held[i]) { fx += flock.px[i]; fy += flock.py[i]; }
+    this.flockX = fx / Math.max(1, na);
+    this.flockY = fy / Math.max(1, na);
 
     for (let i = 0; i < n; i++) { this.parent[i] = i; this.size[i] = 1; }
 
@@ -88,6 +92,7 @@ export class Groups {
     const rings = Math.max(1, Math.ceil(linkDist / grid.cellSize));
     const link2 = linkDist * linkDist;
     for (let i = 0; i < n; i++) {
+      if (held[i]) continue;
       const cx = grid.cellX(flock.px[i]);
       const cy = grid.cellY(flock.py[i]);
       for (let gy = cy - rings; gy <= cy + rings; gy++) {
@@ -118,7 +123,7 @@ export class Groups {
 
     // Scale with the flock: in a flock of five hundred, fifty sheep are still a fragment. At
     // ordinary flock sizes this leaves shedTolerance as written.
-    const tol = Math.max(shedTolerance, n / 4);
+    const tol = Math.max(shedTolerance, na / 4);
     const span = Math.max(1, tol - 1);
     // Autosheep: a group whose way to the rest of the flock is fenced off knows it cannot get
     // there, and stops pining for it. Checked once per group, centre to centre.
@@ -126,8 +131,9 @@ export class Groups {
       for (let i = 0; i < n; i++) {
         const r = this.groupOf[i];
         if (r !== i) continue;
+        if (held[i]) { flock.fenced[r] = 0; continue; }
         const gs = this.size[r];
-        const others = n - gs;
+        const others = na - gs;
         let f = 0;
         if (others > 0) {
           const rx = (fx - this.sumX[r]) / others;
@@ -143,12 +149,20 @@ export class Groups {
     }
     for (let i = 0; i < n; i++) {
       const r = this.groupOf[i];
+      if (held[i]) {
+        this.groupSize[i] = 1;
+        this.groupX[i] = this.restX[i] = flock.px[i];
+        this.groupY[i] = this.restY[i] = flock.py[i];
+        this.seekRest[i] = 0;
+        this.mustRejoin[i] = 0;
+        continue;
+      }
       if (r === i) count++;
       const gs = this.size[r];
       this.groupSize[i] = gs;
       this.groupX[i] = this.sumX[r] / gs;
       this.groupY[i] = this.sumY[r] / gs;
-      const others = n - gs;
+      const others = na - gs;
       if (others > 0) {
         this.restX[i] = (fx - this.sumX[r]) / others;
         this.restY[i] = (fy - this.sumY[r]) / others;

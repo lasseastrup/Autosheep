@@ -148,6 +148,50 @@ describe.each(MODELS)('$name', ({ make, full }) => {
     expect(a.hash()).not.toBe(c.hash());
   });
 
+  test('a held sheep stays where it is put, and the flock does not go after it', () => {
+    const m = flock(make, 13, 20);
+    m.hold(0);
+    m.place(0, 52, 52);
+    run(m, 20, () => []);
+    expect(m.out.x[0]).toBeCloseTo(52, 4);
+    expect(m.out.y[0]).toBeCloseTo(52, 4);
+    // the others graze on round where they were
+    for (let i = 1; i < 20; i++) expect(Math.hypot(m.out.x[i] - 30, m.out.y[i] - 30)).toBeLessThan(12);
+  });
+
+  test('a carried sheep goes where it is carried, through fences and over the edge', () => {
+    const m = flock(make, 14, 12);
+    m.setObstacles(pen(23, 23, 37, 37));
+    m.hold(3);
+    for (let k = 0; k <= 120; k++) {
+      // east out of the pen and on past the edge of the world (60 m wide)
+      const x = 30 + k * 0.275;
+      m.place(3, x, 30);
+      m.step([]);
+      expect(m.out.x[3]).toBeCloseTo(x, 4);
+    }
+    expect(m.out.x[3]).toBeGreaterThan(62);
+    // and the rest are still in the pen
+    expect(countIn(m, 23, 23, 37, 37)).toBe(11);
+  });
+
+  test.runIf(full)('a sheep let go far from its flock walks back to it', () => {
+    const m = flock(make, 15, 20);
+    m.hold(0);
+    m.place(0, 30, 50);
+    run(m, 3, () => []);
+    m.release(0);
+    const rest = () => {
+      let x = 0;
+      let y = 0;
+      for (let i = 1; i < 20; i++) { x += m.out.x[i]; y += m.out.y[i]; }
+      return Math.hypot(m.out.x[0] - x / 19, m.out.y[0] - y / 19);
+    };
+    const d0 = rest();
+    run(m, 60, () => []);
+    expect(rest()).toBeLessThan(d0 * 0.4);
+  });
+
   test.runIf(full).each([7, 8, 9])('a driven flock can be penned through a 3 m gate (seed %i)', (seed) => {
     const m = flock(make, seed, 30, 25, 30, 80, 60);
     const gate = 3;

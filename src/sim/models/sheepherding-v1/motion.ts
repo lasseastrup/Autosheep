@@ -20,9 +20,18 @@ export class Motion {
     const n = flock.count;
     const K = cfg.kinematics;
     const { px, py, vx, vy, prevX, prevY } = flock;
+    // Autosheep: held sheep stay exactly where the game puts them
+    const held = flock.held;
 
     // 1. velocity relaxes toward heading * desiredSpeed
     for (let i = 0; i < n; i++) {
+      if (held[i]) {
+        vx[i] = 0;
+        vy[i] = 0;
+        prevX[i] = px[i];
+        prevY[i] = py[i];
+        continue;
+      }
       const st = flock.state[i];
       const ds = flock.desiredSpeed[i];
       const tx = Math.cos(flock.heading[i]) * ds;
@@ -47,6 +56,7 @@ export class Motion {
 
     // 3. velocity recovery
     for (let i = 0; i < n; i++) {
+      if (held[i]) continue;
       vx[i] = (px[i] - prevX[i]) / dt;
       vy[i] = (py[i] - prevY[i]) / dt;
     }
@@ -81,6 +91,10 @@ export class Motion {
 
     // 5. bookkeeping
     for (let i = 0; i < n; i++) {
+      if (held[i]) {
+        flock.speed[i] = 0;
+        continue;
+      }
       const sp = Math.hypot(vx[i], vy[i]);
       flock.speed[i] = sp;
       if (flock.state[i] === SheepState.Graze && flock.stepRemaining[i] > 0) {
@@ -130,6 +144,8 @@ export class Motion {
         }
       }
       for (let i = 0; i < n; i++) {
+        // Autosheep: a carried sheep may be over the wall, outside the world
+        if (flock.held[i]) continue;
         const r = radius[i];
         if (px[i] < r) px[i] = r; else if (px[i] > W.width - r) px[i] = W.width - r;
         if (py[i] < r) py[i] = r; else if (py[i] > W.height - r) py[i] = W.height - r;
@@ -146,6 +162,7 @@ export class Motion {
   private solveFences(flock: Flock, n: number, obs: Obstacles): void {
     const { px, py, prevX, prevY, radius } = flock;
     for (let i = 0; i < n; i++) {
+      if (flock.held[i]) continue;
       const near = obs.near(px[i], py[i]);
       for (let q = 0; q < near.length; q++) {
         const k = near[q];

@@ -57,6 +57,18 @@ export class SheepherdingV1 implements FlockModel {
     this.sim.tick();
   }
 
+  hold(i: number): void {
+    this.sim.hold(i);
+  }
+
+  place(i: number, x: number, y: number): void {
+    this.sim.place(i, x, y);
+  }
+
+  release(i: number): void {
+    this.sim.release(i);
+  }
+
   hash(): number {
     return hashOutputs(this.out);
   }

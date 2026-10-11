@@ -10,6 +10,8 @@ export const MAX_CONTACTS = 16;
 export class Flock {
   readonly capacity: number;
   count = 0;
+  /** Autosheep: sheep in play, that is `count` less those the game is holding */
+  active = 0;
   episodeCounter = 0;
   /** flock-wide mean nearest-neighbour distance, refreshed each step */
   meanNnd = 1;
@@ -111,6 +113,9 @@ export class Flock {
   readonly grassX: Float32Array;
   readonly grassY: Float32Array;
   readonly grassGain: Float32Array;
+  /** Autosheep: 1 while the game holds this sheep (carried, or kept waiting): it is out of the
+   * flock, unseen by the others, and stays where the game puts it */
+  readonly held: Uint8Array;
 
   // context maps (scratch, slots per sheep)
   readonly interest: Float32Array;
@@ -159,6 +164,7 @@ export class Flock {
     this.handled = new Uint8Array(capacity);
     this.chuteX = f(); this.chuteY = f(); this.chuteDrive = f(); this.chuteRoom = f();
     this.hunger = f(); this.grassHere = f().fill(1); this.grassX = f(); this.grassY = f(); this.grassGain = f();
+    this.held = new Uint8Array(capacity);
     this.interest = new Float32Array(capacity * slots);
     this.danger = new Float32Array(capacity * slots);
   }
@@ -167,6 +173,7 @@ export class Flock {
   spawn(cfg: SimConfig, rng: Rng, at: readonly { x: number; y: number; heading?: number }[]): void {
     const n = Math.min(at.length, this.capacity);
     this.count = n;
+    this.active = n;
     const p = cfg.personality;
     for (let i = 0; i < n; i++) {
       this.scale[i] = rng.range(p.scale[0], p.scale[1]);

@@ -48,11 +48,23 @@ export function computeNeighbours(flock: Flock, grid: UniformGrid, cfg: SimConfi
   const cosOcc = Math.cos(cfg.sheep.occlusionDeg * (Math.PI / 180));
   const contactRange = 1.0; // extra range beyond touching, for grazing repulsion
   const { px, py } = flock;
+  // Autosheep: held sheep are out of the flock (and out of the grid): nobody's neighbours
+  const held = flock.held;
+  const active = flock.active;
 
   let nndSum = 0;
   for (let i = 0; i < n; i++) {
     const xi = px[i];
     const yi = py[i];
+    if (held[i]) {
+      flock.nearestDist[i] = FAR;
+      flock.contactCount[i] = 0;
+      flock.nbrCount[i] = 0;
+      flock.meanVisDist[i] = FAR;
+      flock.lcmX[i] = xi;
+      flock.lcmY[i] = yi;
+      continue;
+    }
     let cc = 0;
 
     // Gather from the 3x3 cells, then expand ring by ring until there are enough candidates for
@@ -87,7 +99,7 @@ export function computeNeighbours(flock: Flock, grid: UniformGrid, cfg: SimConfi
       // everything within r * cellSize is certainly in the list, so it is safe to stop only when
       // the k-th nearest is inside that radius. Anything looser silently returns the wrong
       // neighbours, which changes who each sheep follows and flocks toward.
-      if (cc >= n - 1) break;
+      if (cc >= active - 1) break;
       if (cc >= k && candDist[k - 1] <= ring * grid.cellSize) break;
     }
 
@@ -154,5 +166,5 @@ export function computeNeighbours(flock: Flock, grid: UniformGrid, cfg: SimConfi
       flock.lcmY[i] = yi;
     }
   }
-  flock.meanNnd = n > 1 ? nndSum / n : 1;
+  flock.meanNnd = active > 1 ? nndSum / active : 1;
 }

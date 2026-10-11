@@ -4,6 +4,7 @@ import type { Groups } from './groups';
 import type { Obstacles } from './obstacles';
 import type { Threat } from './perception';
 import type { Rng } from './rng';
+import type { ThreatGrid } from './threatGrid';
 import { SheepState } from './types';
 
 const DEG = Math.PI / 180;
@@ -35,6 +36,8 @@ export class Steering {
   private readonly slotCos: Float32Array;
   private readonly slotSin: Float32Array;
   private readonly slots: number;
+  /** Autosheep: the threats near one sheep, from the threat grid */
+  private cand = new Int32Array(64);
 
   constructor(private readonly cfg: SimConfig, private readonly rng: Rng) {
     this.slots = cfg.steering.slots;
@@ -94,9 +97,13 @@ export class Steering {
     groups: Groups,
     obstacles: Obstacles,
     time: number,
+    threatGrid: ThreatGrid | null = null,
   ): void {
     const cfg = this.cfg;
     const n = flock.count;
+    // Autosheep: with many threats about, the ones near enough to steer round come from the grid
+    const grid = threatGrid && threatGrid.active ? threatGrid : null;
+    if (grid && this.cand.length < threats.length) this.cand = new Int32Array(threats.length * 2);
     const N = this.slots;
     const interest = flock.interest;
     const danger = flock.danger;
@@ -111,6 +118,12 @@ export class Steering {
 
     for (let i = 0; i < n; i++) {
       const base = i * N;
+      // Autosheep: a held sheep is out of the flock and stays where the game puts it
+      if (flock.held[i]) {
+        flock.desiredSpeed[i] = 0;
+        flock.intent[i] = 0;
+        continue;
+      }
       interest.fill(0, base, base + N);
       danger.fill(0, base, base + N);
       const st = flock.state[i] as SheepState;
@@ -359,8 +372,9 @@ export class Steering {
       // without that the danger lobe evaporates as fear decays and the flock strolls straight
       // through where the dog is standing. Autosheep: every threat is an obstacle.
       if (desiredSpeed > 0) {
-        for (let q = 0; q < threats.length; q++) {
-          const o = threats[q];
+        const m = grid ? grid.query(x, y, FL.obstacleRadius, this.cand) : threats.length;
+        for (let c = 0; c < m; c++) {
+          const o = threats[grid ? this.cand[c] : c];
           const dx = o.x + o.vx * cfg.pressure.lookahead - x;
           const dy = o.y + o.vy * cfg.pressure.lookahead - y;
           const d = Math.hypot(dx, dy);
@@ -467,7 +481,7 @@ export class Steering {
     const dy = groups.restY[i] - y;
     const dRest = Math.hypot(dx, dy);
     // With a whole flock there is no "rest": restX falls back to my own group's centre.
-    const divided = groups.groupSize[i] < flock.count;
+    const divided = groups.groupSize[i] < flock.active;
     const gx = groups.groupX[i] - x;
     const gy = groups.groupY[i] - y;
     const gd = Math.hypot(gx, gy);

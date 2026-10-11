@@ -3,6 +3,7 @@ import type { GrassField } from '../../grass';
 import type { SimConfig } from './config';
 import { Flock, FEAR_HIST, MAX_NEIGHBOURS } from './flock';
 import type { Obstacles } from './obstacles';
+import type { ThreatGrid } from './threatGrid';
 import { SheepState } from './types';
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
@@ -39,6 +40,10 @@ export interface PointStimulus {
  * fast `fear` and slow `arousal` variables. See docs/flock-design.md §3.
  */
 export class Perception {
+  /** Autosheep: the threats one sheep weighs (from the threat grid, or all of them) */
+  private cand = new Int32Array(64);
+  private all = new Int32Array(0);
+
   constructor(private cfg: SimConfig) {}
 
   setConfig(cfg: SimConfig): void {
@@ -97,6 +102,7 @@ export class Perception {
     chutes: readonly Stimulus[] = [],
     grass: GrassField | null = null,
     step = 0,
+    threatGrid: ThreatGrid | null = null,
   ): void {
     const cfg = this.cfg;
     const P = cfg.pressure;
@@ -104,6 +110,20 @@ export class Perception {
     const cosBlind = Math.cos(((360 - cfg.sheep.fovDeg) / 2) * (Math.PI / 180));
     const histSlot = flock.histHead;
     const sight = cfg.obstacle.sightFactor;
+    // Autosheep: with many threats, each sheep weighs only those that could reach it. The
+    // farthest any threat can press (threatPressure): its widest flight zone, a moving one's or a
+    // still one's, at full arousal and no habituation, out to the zone's outer edge; a timid sheep
+    // feels it from further off, so this is divided by each sheep's boldness.
+    const grid = threatGrid && threatGrid.active ? threatGrid : null;
+    let reach = 0;
+    if (grid) {
+      if (this.cand.length < threats.length) this.cand = new Int32Array(threats.length * 2);
+      let maxR = 0;
+      for (let k = 0; k < threats.length; k++) if (threats[k].radius > maxR) maxR = threats[k].radius;
+      reach = maxR * Math.max(1, P.zoneIdle / P.zoneDog) * 1.2 * Math.max(1, 1 - P.habituationStrength) * 1.001 + 0.01;
+    } else if (this.all.length < threats.length) {
+      this.all = Int32Array.from({ length: threats.length * 2 }, (_, k) => k);
+    }
 
     // Autosheep: who is being handled in a chute. A handled sheep cannot see the flock and is
     // not left behind by it (no pining, no isolation stress); steering walks it up the chute.
@@ -125,12 +145,17 @@ export class Perception {
 
     // running-toward-me test needs the previous slot's values, so read history before writing
     for (let i = 0; i < n; i++) {
+      // Autosheep: a held sheep is out of the flock; it perceives nothing until it is let go
+      if (flock.held[i]) continue;
       const x = flock.px[i];
       const y = flock.py[i];
       // Autosheep: every threat is assessed and the one pressing hardest is the one I react to
       let pressure = 0;
       let dominant = -1;
-      for (let k = 0; k < threats.length; k++) {
+      const list = grid ? this.cand : this.all;
+      const m = grid ? grid.query(x, y, reach / flock.boldness[i], this.cand) : threats.length;
+      for (let q = 0; q < m; q++) {
+        const k = list[q];
         const p = this.threatPressure(flock, i, threats[k], cosBlind);
         if (p <= 0) continue;
         const seen = p * (obstacles.blocksSight(x, y, threats[k].x, threats[k].y) ? sight : 1);

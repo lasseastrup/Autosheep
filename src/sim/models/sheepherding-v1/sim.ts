@@ -4,7 +4,7 @@ import { GRASS, type GrassField } from '../../grass';
 const GRASS_BITE = GRASS.bite;
 import { Behaviour } from './behaviour';
 import { defaultConfig, mergeConfig, type DeepPartial, type SimConfig } from './config';
-import { Flock } from './flock';
+import { FEAR_HIST, Flock } from './flock';
 import { UniformGrid } from './grid';
 import { Groups } from './groups';
 import { Motion } from './motion';
@@ -13,6 +13,7 @@ import { Obstacles } from './obstacles';
 import { Perception, type PointStimulus, type Threat } from './perception';
 import { Rng } from './rng';
 import { Steering } from './steering';
+import { ThreatGrid } from './threatGrid';
 import { SheepState } from './types';
 
 interface Echo extends PointStimulus {
@@ -37,6 +38,8 @@ export class Sim {
   readonly perception: Perception;
   readonly groups: Groups;
   readonly obstacles: Obstacles;
+  /** Autosheep: this step's threats by where they are, when there are many */
+  readonly threatGrid = new ThreatGrid();
   /** the threats acting this step, in the order the game listed them */
   readonly threats: Threat[] = [];
   private readonly startles: PointStimulus[] = [];
@@ -135,6 +138,57 @@ export class Sim {
   }
 
   /**
+   * Autosheep: the game takes sheep i out of the flock (to carry it, or keep it waiting). It
+   * stops where it is, standing grazing, out of every other sheep's sight and grid; anyone
+   * following it loses its leader.
+   */
+  hold(i: number): void {
+    const f = this.flock;
+    if (i < 0 || i >= f.count || f.held[i]) return;
+    f.held[i] = 1;
+    f.active--;
+    f.vx[i] = 0;
+    f.vy[i] = 0;
+    f.speed[i] = 0;
+    f.desiredSpeed[i] = 0;
+    f.state[i] = SheepState.Graze;
+    f.stateTime[i] = 0;
+    f.pendingState[i] = -1;
+    f.leader[i] = -1;
+    f.stepRemaining[i] = 0;
+    f.threatIdx[i] = -1;
+    for (let k = 0; k < f.count; k++) if (f.leader[k] === i) f.leader[k] = -1;
+  }
+
+  /** Autosheep: where a held sheep is now (the game carries it about). */
+  place(i: number, x: number, y: number): void {
+    const f = this.flock;
+    if (i < 0 || i >= f.count || !f.held[i]) return;
+    f.px[i] = f.prevX[i] = x;
+    f.py[i] = f.prevY[i] = y;
+  }
+
+  /** Autosheep: a held sheep back into the flock where it stands, standing still, grazing. */
+  release(i: number): void {
+    const f = this.flock;
+    if (i < 0 || i >= f.count || !f.held[i]) return;
+    f.held[i] = 0;
+    f.active++;
+    f.prevX[i] = f.px[i];
+    f.prevY[i] = f.py[i];
+    f.vx[i] = 0;
+    f.vy[i] = 0;
+    f.state[i] = SheepState.Graze;
+    f.stateTime[i] = 0;
+    f.pendingState[i] = -1;
+    f.nextStepAt[i] = this.time + 1;
+    f.seenUntil[i] = -1;
+    f.lure[i] = 0;
+    // its fear history is stale: what it feels now is what its neighbours will see
+    for (let s = 0; s < FEAR_HIST; s++) f.fearHist[i * FEAR_HIST + s] = f.fear[i];
+  }
+
+  /**
    * Autosheep: hunger grows; a sheep grazing with its head down eats the grass at its muzzle,
    * the hungrier the more, and a full belly takes the edge off it.
    */
@@ -142,6 +196,8 @@ export class Sim {
     const f = this.flock;
     const G = this.cfg.grazing;
     for (let i = 0; i < f.count; i++) {
+      // Autosheep: a held sheep neither eats nor gets hungrier
+      if (f.held[i]) continue;
       let hunger = f.hunger[i] + G.hungerRate * dt;
       if (f.state[i] === SheepState.Graze && !f.handled[i] && f.stepRemaining[i] <= 0) {
         const h = f.heading[i];
@@ -156,12 +212,13 @@ export class Sim {
   tick(): void {
     const f = this.flock;
     const dt = this.cfg.dt;
-    this.grid.build(f.px, f.py, f.count);
+    this.grid.build(f.px, f.py, f.count, f.held);
     computeNeighbours(f, this.grid, this.cfg);
     this.groups.update(f, this.grid, this.cfg.group.linkDist, this.cfg.group.shedTolerance, this.cfg.group.strayDist, this.obstacles);
-    this.perception.update(f, this.threats, this.startles, this.lures, this.obstacles, this.time, dt, this.flows, this.chutes, this.grass, this.step);
+    this.threatGrid.build(this.threats, this.cfg.pressure.lookahead);
+    this.perception.update(f, this.threats, this.startles, this.lures, this.obstacles, this.time, dt, this.flows, this.chutes, this.grass, this.step, this.threatGrid);
     if (this.cfg.behaviourEnabled) this.behaviour.update(f, this.time, dt, this.groups);
-    this.steering.update(f, this.threats, dt, this.groups, this.obstacles, this.time);
+    this.steering.update(f, this.threats, dt, this.groups, this.obstacles, this.time, this.threatGrid);
     this.motion.update(f, dt);
     if (this.grass) this.graze(this.grass, dt);
     f.group.set(this.groups.groupOf.subarray(0, f.count));

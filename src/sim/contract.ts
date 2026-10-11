@@ -175,6 +175,17 @@ export interface FlockModel {
   setGrass(grass: GrassField | null): void;
   /** Advance one fixed step under the given stimuli (startles fire on this step only). */
   step(stimuli: readonly Stimulus[]): void;
+  /**
+   * Take sheep `i` out of the flock without removing it: the game is carrying it, or keeps it
+   * waiting somewhere (a stray not yet found, a sheep not yet in play). A held sheep stays
+   * where `place` puts it, at rest; the others no longer see it, flock to it or bump into it.
+   * Its index, and everything the game keeps about it, stay the same.
+   */
+  hold(i: number): void;
+  /** Where a held sheep is now (the game moves a carried sheep with whatever carries it). */
+  place(i: number, x: number, y: number): void;
+  /** Put a held sheep back into the flock where it stands, standing still and grazing. */
+  release(i: number): void;
   readonly out: FlockOutputs;
   /** Simulated seconds since init. */
   readonly time: number;

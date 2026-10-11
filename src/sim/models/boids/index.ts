@@ -25,6 +25,8 @@ export class BoidsModel implements FlockModel {
   private group!: Int32Array;
   private wander!: Float32Array;
   private hunger!: Float32Array;
+  /** sheep the game is holding: out of the flock, where the game puts them */
+  private held!: Uint8Array;
   private fences: Obstacle[] = [];
   private seed = 1;
   private grass: GrassField | null = null;
@@ -41,6 +43,7 @@ export class BoidsModel implements FlockModel {
     this.heading = f(); this.speed = f(); this.fear = f(); this.wander = f(); this.hunger = f();
     this.state = new Uint8Array(n);
     this.group = new Int32Array(n);
+    this.held = new Uint8Array(n);
     spec.sheep.forEach((s, i) => {
       this.x[i] = s.x;
       this.y[i] = s.y;
@@ -71,11 +74,31 @@ export class BoidsModel implements FlockModel {
     this.grass = grass;
   }
 
+  hold(i: number): void {
+    if (i < 0 || i >= this.n) return;
+    this.held[i] = 1;
+    this.vx[i] = this.vy[i] = this.speed[i] = 0;
+    this.state[i] = SheepState.Graze;
+  }
+
+  place(i: number, x: number, y: number): void {
+    if (i < 0 || i >= this.n || !this.held[i]) return;
+    this.x[i] = x;
+    this.y[i] = y;
+  }
+
+  release(i: number): void {
+    if (i < 0 || i >= this.n) return;
+    this.held[i] = 0;
+    this.vx[i] = this.vy[i] = 0;
+  }
+
   step(stimuli: readonly Stimulus[]): void {
-    const { n, x, y, vx, vy, fear, dt } = this;
+    const { n, x, y, vx, vy, fear, dt, held } = this;
     // fear: direct from threats and startles, then a little contagion, then decay
     const prevFear = Float32Array.from(fear);
     for (let i = 0; i < n; i++) {
+      if (held[i]) continue;
       let f = prevFear[i] * Math.exp(-dt / 4);
       for (const s of stimuli) {
         if (s.kind === 'lure' || s.kind === 'flow' || s.kind === 'chute') continue;
@@ -86,17 +109,19 @@ export class BoidsModel implements FlockModel {
       fear[i] = f;
     }
     for (let i = 0; i < n; i++) {
+      if (held[i]) continue;
       let near = 0;
       for (let j = 0; j < n; j++) {
-        if (j !== i && Math.hypot(x[j] - x[i], y[j] - y[i]) < 3) near = Math.max(near, prevFear[j] * 0.7);
+        if (j !== i && !held[j] && Math.hypot(x[j] - x[i], y[j] - y[i]) < 3) near = Math.max(near, prevFear[j] * 0.7);
       }
       fear[i] = Math.max(fear[i], near);
     }
 
     for (let i = 0; i < n; i++) {
+      if (held[i]) continue;
       let sx = 0, sy = 0, cx = 0, cy = 0, ax = 0, ay = 0, cn = 0;
       for (let j = 0; j < n; j++) {
-        if (j === i) continue;
+        if (j === i || held[j]) continue;
         const dx = x[j] - x[i];
         const dy = y[j] - y[i];
         const d = Math.hypot(dx, dy);
@@ -187,6 +212,7 @@ export class BoidsModel implements FlockModel {
     }
 
     for (let i = 0; i < n; i++) {
+      if (held[i]) continue;
       const ox = x[i];
       const oy = y[i];
       x[i] += vx[i] * dt;
@@ -241,7 +267,9 @@ export class BoidsModel implements FlockModel {
     for (let i = 0; i < n; i++) g[i] = i;
     const find = (a: number): number => { while (g[a] !== a) a = g[a] = g[g[a]]; return a; };
     for (let i = 0; i < n; i++) {
+      if (this.held[i]) continue;
       for (let j = i + 1; j < n; j++) {
+        if (this.held[j]) continue;
         if (Math.hypot(this.x[i] - this.x[j], this.y[i] - this.y[j]) < 6) {
           const a = find(i);
           const b = find(j);

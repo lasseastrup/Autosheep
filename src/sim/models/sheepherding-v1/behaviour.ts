@@ -119,6 +119,8 @@ export class Behaviour {
     const R = cfg.run;
 
     for (let i = 0; i < n; i++) {
+      // Autosheep: a held sheep is out of the flock and does nothing until it is let go
+      if (flock.held[i]) continue;
       flock.stateTime[i] += dt;
       if (flock.pendingState[i] >= 0 && flock.pendingAt[i] <= time) {
         this.enter(flock, i, flock.pendingState[i] as SheepState, time);

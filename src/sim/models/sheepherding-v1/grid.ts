@@ -28,16 +28,18 @@ export class UniformGrid {
     return r < 0 ? 0 : r >= this.rows ? this.rows - 1 : r;
   }
 
-  build(px: Float32Array, py: Float32Array, n: number): void {
+  /** Autosheep: sheep marked in `skip` (held by the game) are left out. */
+  build(px: Float32Array, py: Float32Array, n: number, skip?: Uint8Array): void {
     const cs = this.cellStart;
     cs.fill(0);
     for (let i = 0; i < n; i++) {
+      if (skip && skip[i]) continue;
       const c = this.cellY(py[i]) * this.cols + this.cellX(px[i]);
       this.cellOf[i] = c;
       cs[c + 1]++;
     }
     for (let c = 0; c < cs.length - 1; c++) cs[c + 1] += cs[c];
     for (let c = 0; c < this.fill.length; c++) this.fill[c] = cs[c];
-    for (let i = 0; i < n; i++) this.cellItems[this.fill[this.cellOf[i]]++] = i;
+    for (let i = 0; i < n; i++) if (!(skip && skip[i])) this.cellItems[this.fill[this.cellOf[i]]++] = i;
   }
 }
