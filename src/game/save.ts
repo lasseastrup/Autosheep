@@ -6,7 +6,9 @@
 import type { Device } from '../works/devices';
 import type { Unlock } from './forms';
 
-export const SAVE_KEY = 'autosheep.valley.v1';
+/** The survivors branch is published beside the main line on the same site, so it keeps its
+ * saves under its own key and never overwrites the main line's valley. */
+export const SAVE_KEY = 'autosheep.survivors.valley.v1';
 
 export interface Snapshot {
   v: 1;

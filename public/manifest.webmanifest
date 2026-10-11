@@ -1,7 +1,7 @@
 {
-  "name": "Autosheep",
-  "short_name": "Autosheep",
-  "description": "An isometric pixel-art sheep-herding automation game.",
+  "name": "Autosheep: Survivors",
+  "short_name": "Survivors",
+  "description": "Autosheep as a survivors-like: protect a growing flock from alien claim-jumpers (experimental branch).",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
