@@ -1,6 +1,13 @@
 # Builds the game and publishes it to GitHub Pages on every push to the main line of work.
 # One-time setup in the repository: Settings → Pages → Build and deployment → Source:
 # "GitHub Actions".
+#
+# The site also carries experiments from other branches, each in its own folder and each
+# installable as its own home-screen app: the survivors pivot (claude/survivors-pivot) at
+# /survivors/. Every deployment rebuilds the main line and every experiment from their
+# branches' latest commits; a push to an experiment starts this workflow here through
+# pages-redeploy.yml, so deployments always run on the default branch. If any build or test
+# fails, nothing is deployed and the site stays as it was.
 name: Deploy to GitHub Pages
 
 on:
@@ -30,6 +37,26 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+      # experiments, one folder each; one whose branch is gone is left out
+      - name: Find the survivors branch
+        id: survivors
+        run: echo "found=$(git ls-remote --heads origin claude/survivors-pivot | wc -l)" >> "$GITHUB_OUTPUT"
+      - if: steps.survivors.outputs.found != '0'
+        uses: actions/checkout@v4
+        with:
+          ref: claude/survivors-pivot
+          path: experiments/survivors
+      - if: steps.survivors.outputs.found != '0'
+        name: Build the survivors pivot into /survivors/
+        working-directory: experiments/survivors
+        run: |
+          npm ci
+          npm test
+          npm run build
+          mkdir -p ../../dist/survivors
+          cp -R dist/. ../../dist/survivors/
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

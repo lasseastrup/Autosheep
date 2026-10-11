@@ -1,0 +1,20 @@
+# A push to an experiment branch redeploys GitHub Pages: it starts pages.yml on the default
+# branch, which rebuilds the main line and every experiment from their latest commits and
+# publishes them together (see the notes at the top of pages.yml).
+name: Redeploy Pages for an experiment
+
+on:
+  push:
+    branches: [claude/survivors-pivot]
+
+permissions:
+  actions: write
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}

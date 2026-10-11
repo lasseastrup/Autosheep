@@ -16,6 +16,10 @@ The game design is in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 **https://lasseastrup.github.io/Autosheep/**, rebuilt and redeployed by GitHub Actions
 (`.github/workflows/pages.yml`) on every push to the main line of work, once the tests pass.
+Experiments from other branches are published beside it, each installable as its own app with
+its own saves: the survivors pivot (branch `claude/survivors-pivot`, Autosheep as a
+survivors-like that protects a growing flock) is at
+**https://lasseastrup.github.io/Autosheep/survivors/**.
 
 On an iPhone, open it in Safari and choose Share → **Add to Home Screen**: started from the
 Home Screen it runs full screen, without Safari's bars (turn the phone sideways). On Android,
