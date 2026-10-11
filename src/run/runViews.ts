@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { blob } from '../art/geo';
+import { blob, mesh } from '../art/geo';
 import { Saucer } from '../art/ships';
+import { bakeRigid } from '../engine/bake';
 import { C } from '../engine/palette';
-import { noOutline, toon } from '../engine/toon';
-import { SAUCER } from './config';
+import { castShadows, noOutline, toon } from '../engine/toon';
+import { RUN, SAUCER } from './config';
 import { KIND, Phase } from './enemies';
+import { BOOTH_HALF, BOOTH_SIDE, type BoothSite } from './field';
 import { STATS } from './items';
 import { Pickup, Sheep, type Run } from './run';
 
@@ -288,5 +290,89 @@ export class GearView {
     }
     this.bells.count = n;
     this.bells.instanceMatrix.needsUpdate = true;
+  }
+}
+
+/**
+ * The Bureau's shearing booths: a raised board under a red canopy with a pair of shears on top,
+ * a ramp up from the mouth and one down at the side, and a clipper hanging from the canopy that
+ * works round the sheep on the board. (The mouth's ring is the HUD's: on the grass it would be
+ * lost in the grass.)
+ */
+export class BoothView {
+  readonly root = new THREE.Group();
+  private readonly booths: { clipper: THREE.Object3D; cable: THREE.Mesh; at: THREE.Vector3 }[] = [];
+  private readonly tmp = new THREE.Vector3();
+  private readonly hook = new THREE.Vector3(0, 2.62, 0);
+  private readonly up = new THREE.Vector3(0, 1, 0);
+
+  constructor(sites: readonly BoothSite[]) {
+    const h = RUN.booths.board;
+    const half = BOOTH_HALF;
+    const plank = toon(C.khaki);
+    const trim = toon(C.clay);
+    const post = toon(C.rust);
+    const roof = toon(C.red);
+    for (const s of sites) {
+      // local +x runs toward the mouth, +z toward the side ramp
+      const g = new THREE.Group();
+      const yaw = -Math.atan2(s.fy, s.fx);
+      g.position.set(s.x, 0, s.y);
+      g.rotation.y = yaw;
+      g.add(mesh(new THREE.BoxGeometry(half * 2, h - 0.08, half * 2), plank, [0, (h - 0.08) / 2, 0]));
+      g.add(mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.08, half * 2 + 0.12), trim, [0, h - 0.04, 0]));
+      // the ramps, down from the board's edge to the grass
+      const run = BOOTH_SIDE - half;
+      const slope = Math.atan2(h, run);
+      const len = Math.hypot(h, run);
+      g.add(mesh(new THREE.BoxGeometry(len, 0.07, 1.0), trim, [half + run / 2, h / 2, 0], [0, 0, -slope]));
+      g.add(mesh(new THREE.BoxGeometry(1.0, 0.07, len), trim, [0, h / 2, half + run / 2], [slope, 0, 0]));
+      // a canopy on four posts, high enough to see the sheep under it
+      for (const x of [-1, 1]) for (const z of [-1, 1]) g.add(mesh(new THREE.BoxGeometry(0.12, 2.5, 0.12), post, [x * (half - 0.08), h + 1.25, z * (half - 0.08)]));
+      g.add(mesh(new THREE.CylinderGeometry(0.05, 1.95, 0.6, 4), roof, [0, h + 2.75, 0], [0, Math.PI / 4, 0]));
+      // a pair of shears on top, for anyone who cannot read, turned to the camera
+      const sign = new THREE.Group();
+      sign.position.set(0, h + 3.6, 0);
+      sign.rotation.y = Math.PI / 4 - yaw;
+      for (const side of [-1, 1]) {
+        const blade = mesh(new THREE.BoxGeometry(0.14, 0.9, 0.08), toon(C.white), [side * 0.12, 0.1, 0]);
+        blade.rotation.z = side * 0.35;
+        sign.add(blade);
+        const ring = mesh(new THREE.TorusGeometry(0.13, 0.05, 4, 8), toon(C.red), [side * 0.26, -0.45, 0]);
+        sign.add(ring);
+      }
+      g.add(sign);
+      // the clipper on its cable (both moved every frame)
+      const clipper = new THREE.Group();
+      clipper.add(mesh(new THREE.BoxGeometry(0.34, 0.14, 0.18), toon(C.white)));
+      clipper.add(mesh(new THREE.BoxGeometry(0.1, 0.1, 0.2), toon(C.scarlet), [0.2, -0.02, 0]));
+      const cable = noOutline(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1, 4), toon(C.coal)));
+      g.add(clipper, cable);
+      castShadows(g);
+      bakeRigid(g, [clipper, cable]);
+      this.root.add(g);
+      this.booths.push({ clipper, cable, at: new THREE.Vector3(0.75, h + 1.2, -0.75) });
+    }
+  }
+
+  update(run: Run, time: number, dt: number): void {
+    const h = RUN.booths.board;
+    const k = 1 - Math.exp(-dt * 10);
+    run.booths.forEach((b, i) => {
+      const v = this.booths[i];
+      const shearing = b.cur >= 0 && b.t >= b.hop;
+      // round the sheep while it works, back to its hook between sheep
+      if (shearing) this.tmp.set(Math.cos(time * 6) * 0.45, h + 0.75 + Math.sin(time * 13) * 0.08, Math.sin(time * 6) * 0.45);
+      else this.tmp.set(0.75, h + 1.2, -0.75);
+      v.at.lerp(this.tmp, k);
+      v.clipper.position.copy(v.at);
+      v.clipper.rotation.y = shearing ? -time * 6 : 0;
+      // the cable from the canopy to the clipper
+      const d = this.tmp.copy(v.at).sub(this.hook);
+      const len = d.length();
+      v.cable.position.copy(this.hook).addScaledVector(d, 0.5);
+      v.cable.quaternion.setFromUnitVectors(this.up, d.multiplyScalar(-1 / (len || 1)));
+      v.cable.scale.set(1, len, 1);
+    });
   }
 }

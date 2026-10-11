@@ -69,8 +69,11 @@ export class RunAudio extends GameAudio {
     if (this.ok('fleece', 0.15)) sfx.pop(this.a, this.t, { pitch: 0.8, vol: 0.6, pan });
   }
 
-  shear(): void {
-    if (this.ok('shear', 0.08)) sfx.pop(this.a, this.t, { pitch: 1.9, vol: 0.25 });
+  /** A fleece off in a booth: snip, snip. */
+  shear(pan: number): void {
+    if (!this.ok('shear', 0.15)) return;
+    sfx.pop(this.a, this.t, { pitch: 2.3, vol: 0.3, pan });
+    sfx.pop(this.a, this.t + 0.08, { pitch: 2.0, vol: 0.3, pan });
   }
 
   pickup(): void {

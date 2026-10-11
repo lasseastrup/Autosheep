@@ -6,7 +6,7 @@ import { Rng } from '../engine/rng';
 import { DEFAULT_OPTIONS, DIRECTOR, ENEMY, FIELD, HP_PER_MINUTE, MINUTES, MODEL_PATCH, RUN, SAUCER, xpToNext, type EnemyKind, type RunOptions } from './config';
 import { Enemies, EnemyGrid, KIND, KINDS, Phase } from './enemies';
 import { EXTRAS, ITEM_IDS, ITEMS, SLOTS, STATS, type Card, type Extra, type ItemId } from './items';
-import type { RunField } from './field';
+import type { BoothSite, RunField } from './field';
 
 /** Where each sheep is in the story of a run. */
 export const Sheep = {
@@ -24,6 +24,8 @@ export const Sheep = {
   Beamed: 5,
   /** gone: to a very nice farm on Zorblax 9 */
   Lost: 6,
+  /** in a shearing booth: hopping up, being shorn, or hopping off */
+  Booth: 7,
 } as const;
 
 /** What can be picked up. */
@@ -41,7 +43,7 @@ export type RunEvent =
   | { kind: 'free'; sheep: number }
   | { kind: 'lost'; sheep: number; beamed: boolean; x: number; y: number }
   | { kind: 'fleece'; sheep: number; x: number; y: number }
-  | { kind: 'shear'; sheep: number }
+  | { kind: 'shear'; sheep: number; x: number; y: number }
   | { kind: 'claim'; n: number; x: number; y: number }
   | { kind: 'strays'; x: number; y: number }
   | { kind: 'sheep'; n: number; x: number; y: number }
@@ -51,9 +53,28 @@ export type RunEvent =
   | { kind: 'mark'; enemy: number }
   | { kind: 'beam'; enemy: number }
   | { kind: 'pickup'; crate: boolean }
-  | { kind: 'first'; what: 'grab' | 'saucer' | 'carried' | 'elite' | 'lost' | 'claim' | 'gloop' }
+  | { kind: 'first'; what: 'grab' | 'saucer' | 'carried' | 'elite' | 'lost' | 'claim' | 'gloop' | 'booth' }
   | { kind: 'hearing' }
   | { kind: 'dismissed' };
+
+/** A shearing booth at work: the sheep it has called in, and the one hopping off. */
+export interface Booth {
+  site: BoothSite;
+  /** the sheep called in (hopping up, then being shorn), or -1 */
+  cur: number;
+  /** seconds since it was called: it lands after `hop` and is shorn `RUN.booths.shear` later */
+  t: number;
+  hop: number;
+  /** where it was called from, and the wool it had */
+  fromX: number;
+  fromY: number;
+  wool0: number;
+  /** the sheep hopping off (-1: none), and seconds since it set off */
+  off: number;
+  offT: number;
+  /** sheep shorn here this run */
+  shorn: number;
+}
 
 export interface RunInput {
   /** where Gafoop wants to go: a direction on the ground, length up to 1 (full speed) */
@@ -104,6 +125,9 @@ export class Run {
     vx: 0, vy: 0, facing: 0,
     composure: RUN.gafoop.composure, invulnerable: 0, ko: 0, calm: 0,
   };
+
+  /** the shearing booths (the field's), and what each is doing */
+  readonly booths: Booth[];
 
   readonly enemies = new Enemies(360);
   private readonly grid = new EnemyGrid(FIELD.width, FIELD.height, 360);
@@ -168,6 +192,7 @@ export class Run {
     const model = new SheepherdingV1(MODEL_PATCH);
     model.init({ seed, width: FIELD.width, height: FIELD.height, sheep });
     model.setObstacles(field.obstacles);
+    this.booths = field.booths.map((site) => ({ site, cur: -1, t: 0, hop: 0, fromX: 0, fromY: 0, wool0: 0, off: -1, offT: 0, shorn: 0 }));
     model.setGrass(this.options.grazing ? this.grass : null);
     this.model = model;
     this.dt = model.dt;
@@ -199,12 +224,12 @@ export class Run {
     return this.items.get(id) ?? 0;
   }
 
-  /** The sheep that are Gafoop's: the flock, and any being carried off (not lost yet). */
+  /** The sheep that are Gafoop's: the flock, any in a shearing booth, and any being carried off (not lost yet). */
   get flockCount(): number {
     let n = 0;
     for (let i = 0; i < this.n; i++) {
       const s = this.status[i];
-      if (s === Sheep.Flock || s === Sheep.Grabbed || s === Sheep.Carried || s === Sheep.Beamed) n++;
+      if (s === Sheep.Flock || s === Sheep.Grabbed || s === Sheep.Carried || s === Sheep.Beamed || s === Sheep.Booth) n++;
     }
     return n;
   }
@@ -278,6 +303,7 @@ export class Run {
     this.grid.build(this.enemies);
     this.enemyStep(dt);
     this.flockStep(dt);
+    this.boothStep(dt);
     this.woolStep(dt);
     this.grid.build(this.enemies);
     this.weaponStep(dt);
@@ -477,6 +503,7 @@ export class Run {
         const x = this.rng.range(10, FIELD.width - 10);
         const y = this.rng.range(10, FIELD.height - 10);
         if (Math.hypot(x - f.x, y - f.y) < S.away) continue;
+        if (this.booths.some((b) => Math.hypot(x - b.site.x, y - b.site.y) < 8)) continue;
         this.addStrays(x, y, S.size[0] + Math.floor(this.rng.next() * (S.size[1] - S.size[0] + 1)));
         break;
       }
@@ -984,9 +1011,13 @@ export class Run {
       s.radius = spec.threat.radius;
       out.push(s);
     }
+    // Gafoop: the flock moves off as he comes; with the bucket he is mostly forgiven, and called to
     const g = this.gafoop;
-    const lure = this.options.lead === 'follow' ? RUN.follow : this.input.bucket ? RUN.bucket : null;
-    if (lure && g.ko <= 0) out.push({ id: 1, kind: 'lure', x: g.x, y: g.y, strength: lure.strength, radius: lure.radius });
+    if (g.ko <= 0) {
+      const p = this.input.bucket ? RUN.withBucket : RUN.presence;
+      out.push({ id: 1, kind: 'threat', x: g.x, y: g.y, strength: p.strength, radius: p.radius });
+      if (this.input.bucket) out.push({ id: 2, kind: 'lure', x: g.x, y: g.y, strength: RUN.bucket.strength, radius: RUN.bucket.radius });
+    }
     for (const s of this.startles) out.push(s);
     this.startles.length = 0;
     this.model.step(out);
@@ -997,26 +1028,109 @@ export class Run {
     }
   }
 
-  /** Wool grows on fed, calm sheep; Gafoop shears a full fleece as he passes. */
+  /**
+   * The shearing booths: each calls in the woolly sheep nearest its board from round its mouth,
+   * one at a time. It hops up, is shorn, and hops off at the side, back into the flock; its wool
+   * flies to Gafoop.
+   */
+  private boothStep(dt: number): void {
+    const B = RUN.booths;
+    const quick = 1 + 0.3 * this.lvl('shears');
+    for (const b of this.booths) {
+      const s = b.site;
+      if (b.off >= 0) {
+        const j = b.off;
+        b.offT += dt * quick;
+        const k = Math.min(1, b.offT / B.off);
+        this.model.place(j, s.x + (s.ox - s.x) * k, s.y + (s.oy - s.y) * k);
+        this.lift[j] = B.board * (1 - k) + Math.sin(Math.PI * k) * 0.45;
+        if (k >= 1) {
+          this.lift[j] = 0;
+          this.model.release(j);
+          this.status[j] = Sheep.Flock;
+          b.off = -1;
+        }
+      }
+      if (b.cur >= 0) {
+        const j = b.cur;
+        b.t += dt * quick;
+        if (b.t < b.hop) {
+          const k = b.t / b.hop;
+          this.model.place(j, b.fromX + (s.x - b.fromX) * k, b.fromY + (s.y - b.fromY) * k);
+          this.lift[j] = B.board * k + Math.sin(Math.PI * k) * 0.6;
+        } else {
+          this.model.place(j, s.x, s.y);
+          this.lift[j] = B.board;
+          const k = Math.min(1, (b.t - b.hop) / B.shear);
+          this.wool[j] = b.wool0 * (1 - k);
+          // shorn (once the last one is off the board): the wool to Gafoop, the sheep off
+          if (k >= 1 && b.off < 0) {
+            this.wool[j] = 0;
+            this.drop(s.x, s.y, b.wool0 * RUN.wool.value, Pickup.Wool, true);
+            this.stats.sheared++;
+            b.shorn++;
+            this.emit({ kind: 'shear', sheep: j, x: s.x, y: s.y });
+            b.off = j;
+            b.offT = 0;
+            b.cur = -1;
+          }
+        }
+      }
+      if (b.cur < 0) this.callIn(b);
+    }
+  }
+
+  /** A booth calls in the woolly sheep nearest its board from round its mouth, if there is one. */
+  private callIn(b: Booth): void {
+    const B = RUN.booths;
+    const s = b.site;
+    const o = this.model.out;
+    let best = -1;
+    let bd = Infinity;
+    for (let j = 0; j < this.n; j++) {
+      if (this.status[j] !== Sheep.Flock || this.wool[j] < B.least || this.lift[j] > 0) continue;
+      if (Math.hypot(o.x[j] - s.mx, o.y[j] - s.my) > B.intake) continue;
+      const d = Math.hypot(o.x[j] - s.x, o.y[j] - s.y);
+      if (d < bd) { bd = d; best = j; }
+    }
+    if (best < 0) return;
+    this.model.hold(best);
+    this.status[best] = Sheep.Booth;
+    b.cur = best;
+    b.t = 0;
+    b.hop = Math.min(B.hopMax, Math.max(0.25, bd * B.hop));
+    b.fromX = o.x[best];
+    b.fromY = o.y[best];
+    b.wool0 = this.wool[best];
+    this.first('booth');
+  }
+
+  /** Everyone in a booth back on the grass beside it (the hearing). */
+  private emptyBooths(): void {
+    for (const b of this.booths) {
+      for (const j of [b.cur, b.off]) {
+        if (j < 0) continue;
+        this.model.place(j, b.site.ox, b.site.oy);
+        this.model.release(j);
+        this.status[j] = Sheep.Flock;
+        this.lift[j] = 0;
+      }
+      b.cur = b.off = -1;
+    }
+  }
+
+  /** Wool grows on fed, calm sheep (the booths shear it). */
   private woolStep(dt: number): void {
     const o = this.model.out;
-    const g = this.gafoop;
     const W = RUN.wool;
     const rate = (1 + 0.2 * this.lvl('merino')) / W.grow;
     const fade = Math.exp(-dt / W.forget);
-    const reach = RUN.shearReach * (1 + 0.15 * this.lvl('shears'));
     for (let j = 0; j < this.n; j++) {
       if (this.status[j] !== Sheep.Flock) continue;
       this.stress[j] = Math.max(this.stress[j] * fade, o.fear[j]);
       const h = this.options.grazing ? o.hunger[j] : 0;
       const fed = h < W.hungry ? 1 : Math.max(0, (1 - h) / (1 - W.hungry));
       this.wool[j] = Math.min(1, this.wool[j] + rate * fed * (1 - W.cost * this.stress[j]) * dt);
-      if (this.wool[j] >= 1 && g.ko <= 0 && Math.hypot(o.x[j] - g.x, o.y[j] - g.y) < reach) {
-        this.wool[j] = 0;
-        this.drop(o.x[j], o.y[j], W.value, Pickup.Wool, true);
-        this.stats.sheared++;
-        this.emit({ kind: 'shear', sheep: j });
-      }
     }
   }
 
@@ -1319,7 +1433,7 @@ export class Run {
   private pickupStep(dt: number): void {
     const p = this.pickups;
     const g = this.gafoop;
-    const radius = RUN.pickup.radius * (1 + 0.25 * this.lvl('shears'));
+    const radius = RUN.pickup.radius;
     for (let k = 0; k < p.high; k++) {
       if (!p.alive[k]) continue;
       p.life[k] -= dt;
@@ -1433,6 +1547,7 @@ export class Run {
         e.remove(i);
       }
       for (let j = 0; j < this.n; j++) this.free(j, false);
+      this.emptyBooths();
       this.over = 'won';
       this.emit({ kind: 'hearing' });
     } else if (this.flockCount === 0) {

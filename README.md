@@ -46,8 +46,9 @@ plays the automation valley instead of the survivors run.
 **Playing: Hold the Flock (S0, this branch's game).** Earth goes to whoever holds its sheep when
 the Bureau reconvenes, in ten minutes, and every claimant in the sector wants them. Gafoop's
 stationery fires itself: a rubber stamp to start with. Fly with `WASD` (or the arrow keys, or by
-pointing the mouse); hold a mouse button or `Space` for the bucket, and the flock follows it. On
-a phone a thumb anywhere is a stick and the other holds BUCKET.
+pointing the mouse). Sheep move off as Gafoop comes at them, the faster the more, so you herd
+them from behind, as a sheepdog does; hold a mouse button or `Space` for the bucket and they come
+to him instead. On a phone a thumb anywhere is a stick and the other holds BUCKET.
 
 - Purple Gloops come over the walls. In the first minute they are after Gafoop; after that,
   after sheep. One pins a sheep, three lift it and carry it off over the nearest wall; deport
@@ -56,8 +57,12 @@ a phone a thumb anywhere is a stick and the other holds BUCKET.
   ring for a couple of seconds, then beam it up: shoot one down and the sheep falls back.
   No more than one sheep in eight can be taken at once.
 - A sheep with half a fleece or more cannot be grabbed: the fleece tears off instead, in tufts
-  to pick up (the wool cushion). Fed, calm sheep grow wool; Gafoop shears full fleeces as he
-  flies past, and wool and the salvage monsters leave fill the requisition bar along the top.
+  to pick up (the wool cushion). Fed, calm sheep grow wool. Gafoop cannot shear: four Bureau
+  shearing booths (red canopies) stand about the meadow, and a woolly sheep inside the dashed
+  ring at a booth's mouth is called up onto the board, shorn and let off at the side, one at a
+  time. Its wool flies to Gafoop, and wool and the salvage monsters leave fill the requisition
+  bar along the top. So a booth is income, at the price of the flock's cushion. When most of
+  the flock is woolly an arrow at the screen edge points to the nearest booth.
 - Each level-up is a pick of three: Gafoop's stationery (stamp, stapler, shredder, crook), the
   flock's gear (bell collars that ring out shockwaves, static wool that arcs lightning between
   sheep standing close) or provisions for either. `1` `2` `3`, or click or tap a card. Big
@@ -67,10 +72,9 @@ a phone a thumb anywhere is a stick and the other holds BUCKET.
   out for four seconds. Lose the last sheep and the claim is dismissed.
 
 `Esc` pauses. The title, pause and results screens hold the S0 test settings, saved in the
-browser: whether the flock follows the bucket or always follows Gafoop, the wool cushion,
-grazing (a hungry sheep grows no wool), and whether level-ups open at once or wait as supply
-drops (`E`). `F` shows the frame rate and counts, with a **+100 SHEEP +150** button for checking
-a phone at the S0 load (100 sheep, 150 monsters).
+browser: the wool cushion, grazing (a hungry sheep grows no wool), and whether level-ups open at
+once or wait as supply drops (`E`). `F` shows the frame rate and counts, with a **+100 SHEEP
++150** button for checking a phone at the S0 load (100 sheep, 150 monsters).
 
 **Playing: The Valley.** One persistent valley that saves itself (in the browser) and carries
 on where you left it. The Galactic Bureau sends Forms, one at a time, on the clipboard in the
@@ -130,6 +134,7 @@ same corner (tap it for the log). The same lines go to the browser console, pref
 | `npm run voice -- <kokoro.onnx> <voices.bin> [ids…]` | Regenerate voice lines with Kokoro TTS (see below) |
 | `node tools/game-shot.mjs <dir> start\|herd` | Headless game screenshots; `herd` has a scripted shepherd play the level to the end |
 | `node tools/run-shot.mjs <dir> [seconds]` | Headless screenshots of a survivors run (title, cards, then the bot flying Gafoop) |
+| `node tools/booth-shot.mjs <dir>` | Headless screenshots of a shearing booth at work, close up, and the pause screen |
 | `HARNESS=1 npx vitest run tests/run-harness.test.ts` | The run harness: whole runs played by a bot, minute by minute (`SEEDS=1,2`, `OPTIONS='{"grazing":false}'`) |
 
 ## How it looks the way it looks

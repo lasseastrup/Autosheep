@@ -19,7 +19,7 @@ import { KIND, Phase } from './enemies';
 import { Run, Sheep, type RunEvent } from './run';
 import type { RunAudio } from './runAudio';
 import { buttonAt, drawRunHud, H, runButtons, W, type Fx, type RunButton, type RunHudState, type RunLayout, type Screen } from './runHud';
-import { GearView, GloopView, PickupView, SaucerView } from './runViews';
+import { BoothView, GearView, GloopView, PickupView, SaucerView } from './runViews';
 
 const OPTIONS_KEY = 'autosheep.survivors.options';
 
@@ -33,6 +33,8 @@ const BARKS: Record<string, string[]> = {
   elite: ['That is a very large Gloop.'],
   lost: ['Gone. To a very nice farm, apparently.', 'Another one for Zorblax 9. Blast.'],
   claim: ['Strays! Welcome to the flock. Stay close.'],
+  booth: ['Next! The Bureau shears in single file.'],
+  woolly: ['Look at all that wool. Herd them into a shearing booth!'],
   strays: ['More strays out there. Somebody fetch them. Me. I mean me.'],
   ko: ['I am fine. I am resting my eyes. On purpose.'],
   level: ['A supply drop! Blorp, you beautiful bureaucrat.'],
@@ -77,6 +79,7 @@ export class RunGame {
   private readonly saucers: SaucerView;
   private readonly pickups: PickupView;
   private readonly gear: GearView;
+  private readonly boothView: BoothView;
   private readonly puffs = new PuffSystem(600);
   run!: Run;
   screen: Screen = 'title';
@@ -142,7 +145,8 @@ export class RunGame {
     this.saucers = new SaucerView(4);
     this.pickups = new PickupView(400);
     this.gear = new GearView(160, RUN.capacity);
-    s.add(this.gloops.root, this.saucers.root, this.pickups.root, this.gear.root, this.puffs.mesh);
+    this.boothView = new BoothView(this.field.booths);
+    s.add(this.boothView.root, this.gloops.root, this.saucers.root, this.pickups.root, this.gear.root, this.puffs.mesh);
 
     this.options = loadOptions();
     this.cam.zoomIndex = 1;
@@ -244,7 +248,7 @@ export class RunGame {
     const g = run.gafoop;
     const gx = lerp(g.px, g.x, alpha);
     const gz = lerp(g.py, g.y, alpha);
-    this.gafoop.tool = run.input.bucket || run.options.lead === 'follow' ? 'bucket' : 'idle';
+    this.gafoop.tool = run.input.bucket ? 'bucket' : 'idle';
     this.gafoop.place(gx, gz, g.vx, g.vy, dt, this.wall);
     // knocked out: he spins; hit: he blinks
     this.gafoop.root.rotation.z = g.ko > 0 ? Math.sin(this.wall * 9) * 0.35 : 0;
@@ -255,6 +259,7 @@ export class RunGame {
     this.saucers.update(run, alpha, this.wall);
     this.pickups.update(run, alpha, this.wall);
     this.gear.update(run, alpha, (i) => this.flock.position(i, this.tmp));
+    this.boothView.update(run, this.wall, dt);
     this.puffs.update(this.wall);
     for (const [i, b] of this.blinkers.entries()) b.visible = Math.floor(this.wall * 1.5 + i * 0.5) % 2 === 0;
 
@@ -357,7 +362,7 @@ export class RunGame {
     this.run.input.bucket = inp.mouseBucket || k.has(' ') || this.held.has('bucket');
   }
 
-  /** Per sheep: out of sight, off the ground, struggling. */
+  /** Per sheep: out of sight, off the ground, struggling, tipped over to be shorn. */
   private fillExtras(): void {
     const run = this.run;
     const ex = this.extras;
@@ -368,6 +373,9 @@ export class RunGame {
         : s === Sheep.Carried ? 0.9 + Math.sin(this.wall * 9 + j) * 0.2
           : s === Sheep.Beamed ? Math.sin(this.wall * 2.5 + j) * 0.5
             : 0;
+    }
+    for (const b of run.booths) {
+      if (b.cur >= 0 && b.t >= b.hop) ex.tilt[b.cur] = 0.6 + Math.sin(this.wall * 11 + b.cur) * 0.12;
     }
   }
 
@@ -438,8 +446,8 @@ export class RunGame {
           a?.fleece(this.pan(e.x, e.y));
           break;
         case 'shear':
-          this.puffs.burst(this.wall, this.tmp.set(o.x[e.sheep], 0.8, o.y[e.sheep]), 4, { color: C.white, size: 0.2, speed: 1, life: 0.5, up: 1 });
-          a?.shear();
+          this.puffs.burst(this.wall, this.tmp.set(e.x, 0.9, e.y), 8, { color: [C.white, C.mist], size: 0.24, speed: 1.4, life: 0.6, up: 1.4 });
+          a?.shear(this.pan(e.x, e.y));
           break;
         case 'claim':
           this.float(e.x, e.y, 1.6, `+${e.n} SHEEP`, C.lime);
@@ -502,6 +510,8 @@ export class RunGame {
     const t = this.run.time;
     if (t > 300) this.say('halfway', 0);
     if (t > RUN.length - 60) this.say('final', 0);
+    // a woolly flock that has never been near a booth
+    if (t > 45 && this.run.stats.sheared === 0 && this.woolly() >= 0.6) this.say('woolly', 0);
     // a panicking flock
     const o = this.run.model.out;
     let running = 0;
@@ -515,6 +525,19 @@ export class RunGame {
       this.lastScatter = this.wall;
       this.say('scatter', 0, true);
     }
+  }
+
+  /** The share of the flock with a fleece worth taking to a booth. */
+  private woolly(): number {
+    const run = this.run;
+    let n = 0;
+    let w = 0;
+    for (let j = 0; j < run.n; j++) {
+      if (run.status[j] !== Sheep.Flock) continue;
+      n++;
+      if (run.wool[j] >= 0.8) w++;
+    }
+    return n ? w / n : 0;
   }
 
   private playBleats(): void {
@@ -538,7 +561,6 @@ export class RunGame {
       touch: this.touch,
       choosing: this.screen === 'play' && this.run.choices !== null,
       supplies: this.screen === 'play' && this.run.options.levelups === 'bank' && !this.run.choices ? this.run.pending : 0,
-      bucketButton: this.run.options.lead === 'bucket',
       perf: this.showPerf,
     };
   }
@@ -572,9 +594,6 @@ export class RunGame {
       case 'quit':
         this.screen = 'title';
         this.newRun();
-        break;
-      case 'opt:lead':
-        this.setOption({ lead: this.options.lead === 'bucket' ? 'follow' : 'bucket' });
         break;
       case 'opt:cushion':
         this.setOption({ cushion: !this.options.cushion });
@@ -666,6 +685,12 @@ export class RunGame {
     };
     const arrows: RunHudState['arrows'] = [];
     const marks: RunHudState['marks'] = [];
+    const booths: RunHudState['booths'] = [];
+    for (const b of run.booths) {
+      const p = toScreen(b.site.mx, b.site.my);
+      const r = RUN.booths.intake * this.cam.pixelsPerMetre;
+      if (p.x > -r && p.x < W + r && p.y > -r && p.y < H + r) booths.push({ ...p, r: RUN.booths.intake, busy: b.cur >= 0 || b.off >= 0 });
+    }
     if (this.screen === 'play') {
       for (let j = 0; j < run.n; j++) {
         const s = run.status[j];
@@ -687,6 +712,16 @@ export class RunGame {
       for (const st of run.strays()) {
         const p = toScreen(st.x, st.y);
         if (!onScreen(p, 0)) arrows.push({ ...edge(p), kind: 'strays', n: st.n });
+      }
+      // a woolly flock: which way the nearest shearing booth is
+      if (this.woolly() >= 0.4) {
+        const f = run.flockCentre();
+        let near: (typeof run.booths)[number] | null = null;
+        for (const b of run.booths) if (!near || Math.hypot(b.site.mx - f.x, b.site.my - f.y) < Math.hypot(near.site.mx - f.x, near.site.my - f.y)) near = b;
+        if (near) {
+          const p = toScreen(near.site.mx, near.site.my);
+          if (!onScreen(p, 0)) arrows.push({ ...edge(p), kind: 'booth', n: 0 });
+        }
       }
     }
     const g0 = run.gafoop;
@@ -715,6 +750,7 @@ export class RunGame {
       choices: run.choices ? run.choices.map((c) => Run.describe(c)) : null,
       arrows,
       marks,
+      booths,
       fx: this.fx,
       floaters: this.floaters,
       bubble,
@@ -738,7 +774,13 @@ export class RunGame {
 function loadOptions(): RunOptions {
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
-    if (raw) return { ...DEFAULT_OPTIONS, ...(JSON.parse(raw) as Partial<RunOptions>) };
+    if (raw) {
+      // only the settings there still are (an older build's may be in there too)
+      const saved = JSON.parse(raw) as Partial<RunOptions>;
+      const o = { ...DEFAULT_OPTIONS };
+      for (const k of Object.keys(o) as (keyof RunOptions)[]) if (k in saved) (o as Record<string, unknown>)[k] = saved[k];
+      return o;
+    }
   } catch {
     // storage blocked or unreadable: the defaults will do
   }

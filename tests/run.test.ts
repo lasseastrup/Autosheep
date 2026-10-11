@@ -1,6 +1,7 @@
 /**
  * The survivors run (S0, src/run/run.ts): grabs and rescues, the wool cushion, the cap on
- * sheep taken at once, shearing, strays, saucers, level-ups, the hearing, determinism.
+ * sheep taken at once, Gafoop's presence and the bucket, the shearing booths, strays, saucers,
+ * level-ups, the hearing, determinism.
  */
 import { describe, expect, test } from 'vitest';
 import { meadowField } from '../src/run/field';
@@ -25,6 +26,13 @@ function run(options: Partial<RunOptions> = {}, seed = 1): Run {
 function steps(r: Run, n: number): void {
   r.spawning = false;
   for (let k = 0; k < n; k++) r.step();
+}
+
+/** Put flock sheep j down at (x, y). */
+function put(r: Run, j: number, x: number, y: number): void {
+  r.model.hold(j);
+  r.model.place(j, x, y);
+  r.model.release(j);
 }
 
 /** n Gloops right beside sheep j, heading for it. */
@@ -117,16 +125,79 @@ describe('the run', () => {
     expect(r.takenCount).toBe(RUN.carry.min);
   });
 
-  test('Gafoop shears a full fleece as he flies past, and the wool is experience', () => {
+  test('sheep move off as Gafoop comes at them', () => {
+    const r = run();
+    r.spawning = false;
+    const f0 = r.flockCentre();
+    r.gafoop.x = r.gafoop.px = f0.x - 12;
+    r.gafoop.y = r.gafoop.py = f0.y;
+    for (let k = 0; k < 5 / r.dt; k++) {
+      const f = r.flockCentre();
+      r.input.move.x = f.x - r.gafoop.x > 3 ? 1 : 0;
+      r.input.move.y = 0;
+      r.step();
+    }
+    expect(r.flockCentre().x - f0.x).toBeGreaterThan(1.5);
+  });
+
+  test('the bucket calls the flock to him', () => {
+    const r = run();
+    const f0 = r.flockCentre();
+    r.gafoop.x = r.gafoop.px = f0.x + 8;
+    r.gafoop.y = r.gafoop.py = f0.y;
+    r.input.bucket = true;
+    steps(r, 6 / r.dt);
+    const f = r.flockCentre();
+    expect(Math.hypot(f.x - r.gafoop.x, f.y - r.gafoop.y)).toBeLessThan(6);
+  });
+
+  test('Gafoop does not shear: a full fleece beside him stays on', () => {
     const r = run();
     const o = r.model.out;
     r.wool[4] = 1;
     r.gafoop.x = o.x[4];
     r.gafoop.y = o.y[4] + 0.5;
-    steps(r, 2);
-    expect(r.wool[4]).toBeLessThan(0.1);
     steps(r, 30);
-    expect(r.stats.xpWool).toBeGreaterThan(0);
+    expect(r.wool[4]).toBe(1);
+    expect(r.stats.sheared).toBe(0);
+  });
+
+  test('a shearing booth calls in a woolly sheep from its mouth, shears it, lets it off at the side, and the wool is experience', () => {
+    const r = run();
+    const b = r.booths[0].site;
+    r.wool[4] = 1;
+    put(r, 4, b.mx, b.my);
+    steps(r, 1);
+    expect(r.status[4]).toBe(Sheep.Booth);
+    // still Gafoop's while it is in there
+    expect(r.flockCount).toBe(RUN.startFlock);
+    for (let k = 0; k < 4 / r.dt && r.status[4] !== Sheep.Flock; k++) steps(r, 1);
+    expect(r.status[4]).toBe(Sheep.Flock);
+    expect(r.wool[4]).toBeLessThan(0.01);
+    expect(r.stats.sheared).toBe(1);
+    const o = r.model.out;
+    expect(Math.hypot(o.x[4] - b.ox, o.y[4] - b.oy)).toBeLessThan(1);
+    // the wool flies to Gafoop, wherever he is
+    steps(r, 10 / r.dt);
+    expect(r.stats.xpWool).toBeCloseTo(RUN.wool.value, 0);
+  });
+
+  test('a booth shears one sheep at a time, and leaves sheep with too little wool alone', () => {
+    const r = run();
+    const b = r.booths[0].site;
+    r.wool[4] = r.wool[5] = 1;
+    r.wool[6] = 0.1;
+    put(r, 4, b.mx + 1, b.my);
+    put(r, 5, b.mx - 1, b.my);
+    put(r, 6, b.mx, b.my + 1);
+    steps(r, 1);
+    const inside = [4, 5, 6].filter((j) => r.status[j] === Sheep.Booth);
+    expect(inside.length).toBe(1);
+    expect(inside[0]).not.toBe(6);
+    steps(r, 6 / r.dt);
+    expect(r.stats.sheared).toBe(2);
+    expect(r.status[6]).toBe(Sheep.Flock);
+    expect(r.wool[6]).toBeGreaterThan(0.1);
   });
 
   test('strays join the flock when Gafoop finds them, and walk back to it', () => {

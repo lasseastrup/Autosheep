@@ -1,7 +1,7 @@
 /**
  * What level-ups offer (plan §8.4, S0's subset): Gafoop's stationery and the flock's gear
- * (armaments, which do damage) and provisions (passive stats), for Gafoop or for the flock.
- * Five slots of each; armaments go to level 6, provisions to 4.
+ * (armaments, which do damage) and provisions (passive stats), for Gafoop, the flock or the
+ * shearing booths. Five slots of each; armaments go to level 6, provisions to 4.
  */
 export type ItemId =
   | 'stamp' | 'stapler' | 'shredder' | 'crook' | 'bells' | 'static'
@@ -10,8 +10,8 @@ export type ItemId =
 export interface ItemDef {
   id: ItemId;
   kind: 'armament' | 'provision';
-  /** who carries it: Gafoop, or the flock */
-  who: 'gafoop' | 'flock';
+  /** who it is for: Gafoop, the flock, or the shearing booths */
+  who: 'gafoop' | 'flock' | 'booths';
   name: string;
   max: number;
   /** the card's two lines: what it does when new, then what each next level adds */
@@ -68,8 +68,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     lines: [['GAFOOP FLIES 10% FASTER', ''], ['20% FASTER', ''], ['30% FASTER', ''], ['40% FASTER', '']],
   },
   shears: {
-    id: 'shears', kind: 'provision', who: 'gafoop', name: 'LONG SHEARS', max: 4,
-    lines: [['PICKS UP AND SHEARS', 'FROM FURTHER AWAY'], ['FURTHER STILL', ''], ['FURTHER STILL', ''], ['FURTHER STILL', '']],
+    id: 'shears', kind: 'provision', who: 'booths', name: 'ELECTRIC SHEARS', max: 4,
+    lines: [['THE SHEARING BOOTHS', 'WORK 30% FASTER'], ['60% FASTER', ''], ['90% FASTER', ''], ['120% FASTER', '']],
   },
   medal: {
     id: 'medal', kind: 'provision', who: 'gafoop', name: 'MEDAL OF EXCESSIVE MERIT', max: 4,

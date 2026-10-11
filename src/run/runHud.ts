@@ -12,7 +12,7 @@ export const H = 360;
 
 export type RunButton =
   | 'card0' | 'card1' | 'card2' | 'supply' | 'bucket' | 'pause' | 'start' | 'resume' | 'quit'
-  | 'opt:lead' | 'opt:cushion' | 'opt:grazing' | 'opt:levelups' | 'perf' | 'stress' | 'zoomIn' | 'zoomOut';
+  | 'opt:cushion' | 'opt:grazing' | 'opt:levelups' | 'perf' | 'stress' | 'zoomIn' | 'zoomOut';
 
 export interface Rect { id: RunButton; x: number; y: number; w: number; h: number }
 
@@ -25,12 +25,11 @@ export interface RunLayout {
   choosing: boolean;
   /** banked level-ups waiting to be opened */
   supplies: number;
-  bucketButton: boolean;
   perf: boolean;
 }
 
 const CARD = { w: 184, h: 108, y: 112, gap: 12 };
-const TOGGLES: RunButton[] = ['opt:lead', 'opt:cushion', 'opt:grazing', 'opt:levelups'];
+const TOGGLES: RunButton[] = ['opt:cushion', 'opt:grazing', 'opt:levelups'];
 
 /** The clickable parts of the screen; drawing and hit-testing both use it. */
 export function runButtons(L: RunLayout): Rect[] {
@@ -43,14 +42,18 @@ export function runButtons(L: RunLayout): Rect[] {
     }
     b.push({ id: 'pause', x: W - 30, y: 48, w: 24, h: 18 });
     if (L.supplies > 0) b.push({ id: 'supply', x: W / 2 - 70, y: H - 46, w: 140, h: 22 });
-    if (L.touch && L.bucketButton) b.push({ id: 'bucket', x: W - 70, y: H - 70, w: 64, h: 64 });
+    if (L.touch) b.push({ id: 'bucket', x: W - 70, y: H - 70, w: 64, h: 64 });
     if (L.touch) b.push({ id: 'zoomOut', x: 6, y: H - 30, w: 26, h: 24 }, { id: 'zoomIn', x: 36, y: H - 30, w: 26, h: 24 });
     if (L.perf) b.push({ id: 'stress', x: 6, y: 92, w: 110, h: 13 });
     return b;
   }
   // the title, the pause screen and the results share one panel: the toggles and a button
   const x0 = W / 2 - 170;
-  TOGGLES.forEach((id, k) => b.push({ id, x: x0 + 12 + (k % 2) * 166, y: 212 + Math.floor(k / 2) * 22, w: 160, h: 18 }));
+  // two to a row; one left on its own goes in the middle
+  TOGGLES.forEach((id, k) => {
+    const alone = k === TOGGLES.length - 1 && k % 2 === 0;
+    b.push({ id, x: alone ? W / 2 - 80 : x0 + 12 + (k % 2) * 166, y: 212 + Math.floor(k / 2) * 22, w: 160, h: 18 });
+  });
   if (L.screen === 'paused') {
     b.push({ id: 'resume', x: W / 2 - 128, y: 264, w: 120, h: 22 }, { id: 'quit', x: W / 2 + 8, y: 264, w: 120, h: 22 });
   } else b.push({ id: 'start', x: W / 2 - 70, y: 264, w: 140, h: 22 });
@@ -89,10 +92,12 @@ export interface RunHudState {
   invulnerable: boolean;
   items: { id: ItemId; level: number; max: number; kind: 'armament' | 'provision' }[];
   choices: Card[] | null;
-  /** off screen: sheep being taken, strays to find */
-  arrows: { x: number; y: number; angle: number; kind: 'taken' | 'strays'; n: number }[];
+  /** off screen: sheep being taken, strays to find, the nearest shearing booth (a woolly flock) */
+  arrows: { x: number; y: number; angle: number; kind: 'taken' | 'strays' | 'booth'; n: number }[];
   /** on screen: ! over sheep being taken */
   marks: { x: number; y: number }[];
+  /** the shearing booths' mouths on screen, where woolly sheep are called in from (r in metres) */
+  booths: { x: number; y: number; r: number; busy: boolean }[];
   fx: Fx[];
   floaters: { text: string; x: number; y: number; age: number; color: string }[];
   bubble: { text: string; x: number; y: number; under: number } | null;
@@ -120,6 +125,7 @@ const mmss = (t: number) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${St
 export function drawRunHud(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
   const L = s.layout;
   if (L.screen === 'play' || L.screen === 'paused' || L.screen === 'over') {
+    drawBooths(g, s);
     drawFx(g, f, s);
     drawMarks(g, f, s);
   }
@@ -198,12 +204,13 @@ function arrowHead(g: CanvasRenderingContext2D, x: number, y: number, angle: num
 function drawArrows(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
   for (const a of s.arrows) {
     const taken = a.kind === 'taken';
-    const color = taken ? C.scarlet : C.gold;
+    const color = taken ? C.scarlet : a.kind === 'booth' ? C.skyLight : C.gold;
     arrowHead(g, a.x, a.y, a.angle, C.black);
     arrowHead(g, a.x - Math.cos(a.angle), a.y - Math.sin(a.angle), a.angle, color);
     const lx = Math.round(a.x - Math.cos(a.angle) * 14);
     const ly = Math.round(a.y - Math.sin(a.angle) * 12) - 4;
     if (taken) f.small.draw(g, '!', lx, ly, { color, align: 'center', outline: C.black });
+    else if (a.kind === 'booth') drawSprite(g, 'shears', lx - 6, ly - 3, 1);
     else {
       drawSprite(g, 'sheep', lx - 7, ly - 2, 1);
       f.tiny.draw(g, String(a.n), lx + 9, ly, { color, outline: C.black });
@@ -233,6 +240,16 @@ function groundRing(g: CanvasRenderingContext2D, cx: number, cy: number, rx: num
     g.fillRect(x, y, 1, 1);
     lastX = x;
     lastY = y;
+  }
+}
+
+/** Each booth's mouth: a dashed ring on the ground, flickering while the booth works. */
+function drawBooths(g: CanvasRenderingContext2D, s: RunHudState): void {
+  for (const b of s.booths) {
+    const r = b.r * s.ppm;
+    const lit = b.busy && Math.floor(s.playing * 8) % 2 === 0;
+    groundRing(g, b.x, b.y + 1, r, r * s.squash, C.black, 3);
+    groundRing(g, b.x, b.y, r, r * s.squash, lit ? C.white : C.skyLight, 3);
   }
 }
 
@@ -306,8 +323,8 @@ function drawCards(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void 
     if (!c) return;
     const down = s.held.has(b.id);
     const isNew = c.level === 1;
-    const who = c.who === 'flock' ? 'FOR THE FLOCK' : c.who === 'gafoop' ? 'FOR GAFOOP' : 'FROM THE BUREAU';
-    const accent = c.who === 'flock' ? C.mint : c.who === 'gafoop' ? C.straw : C.pinkLight;
+    const who = c.who === 'flock' ? 'FOR THE FLOCK' : c.who === 'gafoop' ? 'FOR GAFOOP' : c.who === 'booths' ? 'FOR THE BOOTHS' : 'FROM THE BUREAU';
+    const accent = c.who === 'flock' ? C.mint : c.who === 'gafoop' ? C.straw : c.who === 'booths' ? C.skyLight : C.pinkLight;
     panel(g, b.x, b.y + (down ? 1 : 0), b.w, b.h, { fill: down ? C.coal : C.ink, border: accent, accent });
     const y = b.y + (down ? 1 : 0);
     f.tiny.draw(g, who, b.x + 8, y + 8, { color: accent });
@@ -331,13 +348,19 @@ function drawHelp(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
   const alpha = L.choosing ? 0 : Math.max(0, 1 - (s.playing - 25) / 2);
   if (alpha <= 0) return;
   g.globalAlpha = alpha;
-  const lead = s.options.lead === 'bucket';
-  const text = L.touch
-    ? s.portrait ? 'TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD' : lead ? 'DRAG TO FLY  -  HOLD THE BUCKET: THE FLOCK FOLLOWS' : 'DRAG TO FLY  -  THE FLOCK FOLLOWS YOU'
-    : lead ? 'WASD OR MOUSE: FLY   HOLD CLICK OR SPACE: THE BUCKET   ESC: PAUSE' : 'WASD OR MOUSE: FLY   THE FLOCK FOLLOWS   ESC: PAUSE';
-  const w = f.small.measure(text) + 12;
-  rect(g, Math.round(W / 2 - w / 2), H - (L.touch ? 92 : 20), w, 13, C.black);
-  f.small.draw(g, text, W / 2, H - (L.touch ? 89 : 17), { color: C.mist, align: 'center' });
+  const lines = L.touch && s.portrait
+    ? ['TURN YOUR PHONE SIDEWAYS FOR A BIGGER FIELD']
+    : [
+      L.touch ? 'DRAG TO FLY  -  HOLD THE BUCKET AND THE FLOCK FOLLOWS' : 'WASD OR MOUSE: FLY   HOLD CLICK OR SPACE: THE BUCKET   ESC: PAUSE',
+      'SHEEP MOVE AWAY FROM YOU. HERD WOOLLY ONES INTO A SHEARING BOOTH',
+    ];
+  const bottom = H - (L.touch ? 79 : 7);
+  lines.forEach((text, i) => {
+    const y = bottom - (lines.length - i) * 13;
+    const w = f.small.measure(text) + 12;
+    rect(g, Math.round(W / 2 - w / 2), y, w, 13, C.black);
+    f.small.draw(g, text, W / 2, y + 3, { color: i ? C.skyLight : C.mist, align: 'center' });
+  });
   g.globalAlpha = 1;
 }
 
@@ -390,7 +413,6 @@ function drawControls(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): vo
 }
 
 const OPTION_LABEL: Record<string, (o: RunOptions) => [string, string]> = {
-  'opt:lead': (o) => ['THE FLOCK FOLLOWS', o.lead === 'bucket' ? 'THE BUCKET' : 'GAFOOP, ALWAYS'],
   'opt:cushion': (o) => ['WOOL CUSHION', o.cushion ? 'ON' : 'OFF'],
   'opt:grazing': (o) => ['GRAZING', o.grazing ? 'ON' : 'OFF'],
   'opt:levelups': (o) => ['LEVEL-UPS', o.levelups === 'pause' ? 'AT ONCE' : 'BANKED'],
@@ -409,13 +431,22 @@ function drawMenu(g: CanvasRenderingContext2D, f: Fonts, s: RunHudState): void {
       'EARTH GOES TO WHOEVER HOLDS ITS SHEEP WHEN THE',
       'BUREAU RECONVENES. EVERYONE WANTS THEM. HOLD ON',
       'TO YOURS FOR TEN MINUTES. YOUR STATIONERY FIRES',
-      'ITSELF: FLY ROUND THE FLOCK, FETCH STRAYS, SHEAR',
-      'WOOL FOR EXPERIENCE, AND GET TAKEN SHEEP BACK.',
+      'ITSELF: FLY ROUND THE FLOCK, FETCH STRAYS, GET',
+      'TAKEN SHEEP BACK, AND HERD WOOLLY ONES INTO THE',
+      'SHEARING BOOTHS: THEIR WOOL IS YOUR EXPERIENCE.',
     ];
     lines.forEach((l, i) => f.tiny.draw(g, l, W / 2, top + 76 + i * 10, { color: C.mist, align: 'center' }));
   } else if (L.screen === 'paused') {
     f.huge.draw(g, 'PAUSED', W / 2, top + 8, { color: C.white, align: 'center', shadow: C.black });
-    f.tiny.draw(g, 'THE TEST SETTINGS BELOW APPLY FROM THE NEXT RUN', W / 2, top + 70, { color: C.fog, align: 'center' });
+    const lines = [
+      'SHEEP MOVE AWAY FROM GAFOOP: HERD THEM FROM BEHIND.',
+      'HOLD THE BUCKET AND THEY COME TO HIM INSTEAD.',
+      'WOOLLY SHEEP IN A BOOTH\'S RING ARE CALLED IN AND SHORN,',
+      'ONE AT A TIME. THE WOOL IS EXPERIENCE, BUT A SHORN',
+      'SHEEP HAS NO FLEECE TO TAKE A GRAB FOR IT.',
+    ];
+    lines.forEach((l, i) => f.tiny.draw(g, l, W / 2, top + 62 + i * 10, { color: C.mist, align: 'center' }));
+    f.tiny.draw(g, 'THE TEST SETTINGS BELOW APPLY FROM THE NEXT RUN', W / 2, top + 122, { color: C.fog, align: 'center' });
   } else if (s.result) {
     const r = s.result;
     f.title.draw(g, r.won ? 'THE BUREAU RECONVENES' : 'CLAIM DISMISSED', W / 2, top + 10, { color: r.won ? C.lime : C.scarlet, align: 'center', shadow: C.black });

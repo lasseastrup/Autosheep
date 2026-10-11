@@ -25,9 +25,14 @@ export const RUN = {
     /** monsters closer than this (plus their own size) hit him */
     radius: 0.55,
   },
-  /** the bucket: a lure while held; in follow mode a weaker one, always on */
+  /**
+   * Gafoop's presence: the flock moves off as he comes, more the faster he closes, as it did in
+   * the valley before the Woof-Woof (0.85 over 9 m there; gentler here, where he is always
+   * flying about fighting). While he holds the bucket he is mostly forgiven, and they come to it.
+   */
+  presence: { strength: 0.6, radius: 6 },
+  withBucket: { strength: 0.2, radius: 4 },
   bucket: { strength: 1.0, radius: 14 },
-  follow: { strength: 0.75, radius: 12 },
   wool: {
     /** seconds for a fed, calm sheep's fleece to grow from nothing */
     grow: 40,
@@ -42,8 +47,28 @@ export const RUN = {
     /** seconds the tufts of a torn-off fleece lie on the grass */
     tuftLife: 8,
   },
-  /** Gafoop shears a full fleece as he flies past */
-  shearReach: 3,
+  /**
+   * The Bureau's shearing booths: a woolly sheep that comes within `intake` of a booth's mouth
+   * is called in, hops up onto the board, is shorn and hops off to the side, one sheep at a time.
+   * Its wool flies to Gafoop as experience.
+   */
+  booths: {
+    /** where the boards are (x, y); each booth's mouth faces the middle of the meadow */
+    at: [[32, 32], [85, 28], [90, 60], [35, 64]] as [number, number][],
+    /** the mouth is this far in front of the board, and calls sheep from this far round it */
+    mouth: 3,
+    intake: 5,
+    /** a sheep needs at least this much wool to be called in */
+    least: 0.3,
+    /** seconds: hopping in (a metre takes `hop`, but never more than `hopMax`), being shorn,
+     * hopping off (the next sheep is called as one hops off) */
+    hop: 0.14,
+    hopMax: 1,
+    shear: 0.7,
+    off: 0.35,
+    /** how high the board is */
+    board: 0.3,
+  },
   pickup: { radius: 3, speed: 15, collect: 0.7, max: 180 },
   carry: {
     /** a team's speed when three Gloops lift a sheep (fewer drag it slower) */
@@ -161,8 +186,6 @@ export function xpToNext(l: number): number {
 
 /** The test toggles S0 compares (plan §11). */
 export interface RunOptions {
-  /** the flock follows Gafoop while the bucket is held, or always */
-  lead: 'bucket' | 'follow';
   /** a woolly sheep's fleece takes the first grab */
   cushion: boolean;
   /** the flock grazes the meadow and gets hungry */
@@ -171,4 +194,4 @@ export interface RunOptions {
   levelups: 'pause' | 'bank';
 }
 
-export const DEFAULT_OPTIONS: RunOptions = { lead: 'bucket', cushion: true, grazing: true, levelups: 'pause' };
+export const DEFAULT_OPTIONS: RunOptions = { cushion: true, grazing: true, levelups: 'pause' };

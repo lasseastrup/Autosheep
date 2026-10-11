@@ -1,6 +1,6 @@
 # AUTOSHEEP: SURVIVORS — pivot plan
 
-*Branch `claude/survivors-pivot` · October 2026 · proposal; S0 built, awaiting a playtest (§11.1)*
+*Branch `claude/survivors-pivot` · October 2026 · proposal; S0 built (§11.1) and changed after the first playtest (§11.2)*
 
 > **Nobody touches my sheep.** A survivors-like (Vampire Survivors, Brotato, Halls of Torment)
 > in which the thing you are keeping alive is not you but a growing flock. Every grabby species
@@ -41,7 +41,8 @@ The name can stay: in this genre the *auto* is the weapons.
 |---|---|---|
 | Fantasy | Build a civilisation around sheep | Be the sheepdog: keep the flock together under attack |
 | Session | One persistent valley, hours | Runs of 15–20 minutes, then a between-runs shop and unlocks |
-| Gafoop | Harmless, leads with a bucket, builds | Fights with auto-firing stationery; still leads with the bucket |
+| Gafoop | Harmless, leads with a bucket, builds | Fights with auto-firing stationery; herds by proximity, as a sheepdog, and calls with the bucket |
+| Shearing | By hand, then in sheds the player builds | Only in the Bureau's shearing booths on the map: the flock is herded in |
 | The flock | A logistics layer | The health bar, the XP engine and a weapon platform |
 | Threats | Light hazards only | Waves of alien claim-jumpers who take sheep (never harm them) |
 | Progress | Bureau Forms, Audits, eras | Level-ups in a run; Forms become unlock goals between runs |
@@ -209,6 +210,8 @@ So he crash-lands in a meadow with the sheep, a crate of Blorxian office supplie
 | The run timer | The time until the Bureau reconvenes. The intro's last frame becomes the first frame of the run: *THE BUREAU RECONVENES IN 15:00*. Later hearings are twenty minutes away |
 | The flock grows | Sheep scattered everywhere after the invasion; nobody is left to farm them. More sheep, stronger claim |
 | Level-ups | Blorp's supply drops, paid for in wool, which the Hegemony values "because it is soft" (DESIGN §6.4) |
+| Shearing only in the booths | Under the Code nobody may harm the dominant species, and a General with shears in his hand would be a General with a weapon in his hand. The Bureau's licensed booths shear in single file, under supervision, with a receipt |
+| Sheep shy away from Gafoop | He is a three-eyed green blob on a hover-disc, and sheep are sheep. The bucket helps |
 | Gear on the sheep | *Protective equipment for the dominant species* is allowed under the Code. The sheep do not notice |
 | Runs repeat | The Bureau rules on Earth one region at a time, adjourns, and reconvenes elsewhere. A failed claim can be appealed (retry) |
 | Score | At the hearing the Auditor counts the sheep you are holding |
@@ -304,21 +307,22 @@ regions. Each region is a stage with its own claimants and boss.
 
 ## 5. The herd
 
-### 5.1 Leading and guarding
+### 5.1 Herding, calling and guarding
 
-Gafoop moves with one stick (or WASD). There is one held button, **the bucket**, as in the
-valley: while it is held, sheep within the call radius follow him. Released, the flock stays
-where it is and grazes, and Gafoop is free to fight around it. So a run has two rhythms:
-**guarding** (flock parked on grass, Gafoop circling) and **droving** (moving the flock to fresh
-grass, a stray or away from a boss, slower and more exposed). They are the two jobs real
-sheepdogs alternate, collecting stragglers and driving the gathered flock (§2.4), so the
-rhythm is the true one.
+Gafoop moves with one stick (or WASD). **His presence is felt**, as it was in the valley before
+the Woof-Woof: sheep move off as he comes, more the faster he closes, and settle once he keeps
+his distance. So he herds from behind, as a sheepdog does, and a careless flight through the
+flock scatters it. There is one held button, **the bucket**: while it is held he is mostly
+forgiven, and sheep within the call radius come to him and follow at a walk. So a run has two
+rhythms: **guarding** (flock parked on grass, Gafoop circling it, which also keeps it bunched)
+and **droving** (moving the flock to a shearing booth, fresh grass, a stray or away from a boss,
+slower and more exposed). They are the two jobs real sheepdogs alternate, collecting stragglers
+and driving the gathered flock (§2.4), so the rhythm is the true one.
 
-The alternative is a flock that always follows Gafoop loosely, like a bell-wether, with
-nothing to press. That is simpler (pure one-stick play, closer to the genre) but turns the herd
-into a snake's tail and makes kiting drag enemies through it. **S0 prototypes both** (§11);
-the recommendation is bucket-to-lead, because guarding versus droving is where the decisions
-are.
+S0 first shipped with a harmless Gafoop (the valley's M2b rule), a bucket to lead and a test
+setting for a flock that always follows him loosely, like a bell-wether. The first playtest
+found a Gafoop the flock ignores confusing (§11.2), so proximity is back and the always-follow
+setting is gone.
 
 ### 5.2 The flock is the health bar
 
@@ -359,14 +363,21 @@ following their mothers. Herdling keeps its herd near ten so each animal matters
 of a hundred cannot do that, but a handful of named sheep in it can, and losing one of them
 gets a line of its own.
 
-### 5.4 Wool is experience
+### 5.4 Wool is experience, taken in at the booths
 
-Sheep grow wool while fed and calm (about 45 s for a full fleece; slower when frightened, as in
-the valley). Gafoop shears automatically as he flies through the flock: a sheep with a full
-fleece within shearing reach is shorn, and its wool flies to him as tufts. A shorn sheep has
-no cushion (§5.2) until its fleece is back past half, so a flock that has just been shorn is
-briefly exposed. Enemies drop salvage when deported. Wool and salvage fill the same
-requisition bar.
+Sheep grow wool while fed and calm (about 40 s for a full fleece; slower when frightened, as in
+the valley). Gafoop cannot shear. The Bureau has put **shearing booths** about the map (four in
+the S0 meadow): a raised board under a canopy, with a ring on the grass at its mouth. A sheep
+with at least a third of a fleece that stands in the ring is called up onto the board, shorn
+and let off at the side, **one at a time** (a second and a bit each), and its wool flies to
+Gafoop. Getting the flock there is the work: drive it in from behind, or call it with the
+bucket, then keep the monsters off while the queue goes through. A sheep on the board is out of
+reach of grabbers and saucers.
+
+A shorn sheep has no cushion (§5.2) until its fleece is back past half, so every trip trades
+the flock's armour for experience: shear when the field is quiet, or keep the wool on through a
+rush. Fleece torn off by a grab still counts if the tufts are picked up. Enemies drop salvage
+when deported. Wool and salvage fill the same requisition bar.
 
 This is the line that makes the flock an asset, not a liability: early levels come from
 kills, mid-run levels mostly from wool, and a scared, hungry or shrinking flock levels you
@@ -414,9 +425,10 @@ white flock always reads.
   back after a few seconds without a hit. At zero, Gafoop is knocked out for four seconds (stars,
   spinning cap): weapons stop and the flock is on its own. Being surrounded therefore still
   matters, without a second fail state.
-- **The bucket**: hold to lead (§5.1). On a phone: stick on the left thumb, BUCKET on the right,
+- **Presence**: sheep move off as he comes (§5.1); he herds by where he flies.
+- **The bucket**: hold to call (§5.1). On a phone: stick on the left thumb, BUCKET on the right,
   as the valley's FEED button already works.
-- **Shearing reach**: the pickup radius for wool and salvage (the genre's magnet stat).
+- **Pickup reach**: the radius in which salvage and tufts fly to him (the genre's magnet stat).
 
 ---
 
@@ -520,8 +532,9 @@ Blorp names it in a bark. A sheep is never lost to something the player could no
 
 ### 8.1 The requisition bar
 
-- **Sources**: wool tufts (a full fleece is worth 3) and salvage from deported enemies (a Gloop
-  1, a Repo-bot 2, an elite 20). Shearing reach pulls both in.
+- **Sources**: wool from the shearing booths and from torn fleeces (a full fleece is worth 3)
+  and salvage from deported enemies (a Gloop 1, a Repo-bot 2, an elite 20). Pickup reach pulls
+  in what lies about.
 - **Curve**: Vampire Survivors' shape, scaled to a shorter run. Level *n* → *n*+1 costs about
   5 + 8(*n*−1) to level 20, then a one-off bump and a steeper slope, because by then the flock's
   wool is most of the income. The constants are the harness's to tune; the targets are the
@@ -564,7 +577,7 @@ fewer slots and shorter tracks keep the build growing to the end.)
 | **Paper Shredder** | Orbiting blades | Triplicate → **Document Destruction Unit** |
 | **Red Tape** | Lays tape behind Gafoop that slows and snags | Bureaucracy → **Kafka Field**: snagged enemies are filed (frozen) |
 | **Paper Planes** | Homing forms that seek the enemy **nearest a sheep** | Bureau Connections → **Form 77-B in Quintuplicate** |
-| **Herding Crook** | Sweep in the direction of travel; yanks carried sheep free | Long Shears → **Crook of Office**: both sides, frees every sheep in the arc |
+| **Herding Crook** | Sweep in the direction of travel; yanks carried sheep free | Long Reach → **Crook of Office**: both sides, frees every sheep in the arc |
 | **Hole Punch** | Slow, heavy hit on the biggest enemy in range | Bigger Cap → **Black Hole Punch**: pulls enemies in first |
 | **Filing Cabinet** | Blorp drops cabinets from orbit on the thickest crowd | Orbital Clearance → **Archive Avalanche** |
 | **Woof-Woof 3000** | A bark: knocks enemies back, and also bunches the flock (scared sheep grow less wool) | Clockwork Collie → **The Hound of the Baaskervilles**: a spectral hound circles the flock barking enemies away, without scaring a single sheep |
@@ -586,7 +599,8 @@ fewer slots and shorter tracks keep the build growing to the end.)
 | For Gafoop | Effect | For the flock | Effect |
 |---|---|---|---|
 | Turbo Disc | Move speed | **Thick Fleece** | Grabs take longer; the fleece cushions from a third grown |
-| Long Shears | Shearing reach (pickup radius) | **Bellwether** | Tighter flock, fewer stragglers |
+| Long Reach | Pickup radius | **Bellwether** | Tighter flock, fewer stragglers |
+| Electric Shears | The shearing booths work faster | | |
 | Medal of Excessive Merit | Damage | **Calm Disposition** | Fear spreads less, settles faster |
 | Expedited Processing | Cooldowns | **Merino Genes** | Wool grows faster (more experience) |
 | Triplicate | Projectile count | **Lambing Season** | More lambs |
@@ -596,7 +610,7 @@ fewer slots and shorter tracks keep the build growing to the end.)
 | Composure Training | Composure pips | Good Grazing | Hunger slower, grazing faster |
 | Orbital Clearance | Crate quality | | |
 
-That is 16 armaments, 19 provisions and 15 evolutions: more than S1 needs (§11 picks a subset).
+That is 16 armaments, 20 provisions and 15 evolutions: more than S1 needs (§11 picks a subset).
 
 ### 8.5 Supply crates
 
@@ -717,7 +731,7 @@ The contract (`src/sim/contract.ts`) gains what the run needs, and nothing reach
 
 | Milestone | Goal | Exit criteria |
 |---|---|---|
-| **S0: Find the fun** 🟡 built, awaiting a playtest (§11.1) | Greybox in the existing engine: the meadow, 8 sheep, Gafoop with the stamp and the stapler, Gloops and saucers, grabbing and rescue, wool as experience, a level-up screen with about eight items, strays, a 10-minute run, lose at zero sheep. Two builds, bucket-to-lead and always-follow; toggles for the wool cushion (§5.2), grazing (§5.5) and banked level-ups (§8.1) | Testers ask for another run; protecting feels like being a sheepdog, not babysitting; every lost sheep was seen being lost; it runs at 50 fps on a phone with 100 sheep and 150 enemies |
+| **S0: Find the fun** 🟡 built (§11.1), changed after the first playtest (§11.2) | Greybox in the existing engine: the meadow, 8 sheep, Gafoop with the stamp and the stapler, Gloops and saucers, grabbing and rescue, wool as experience, a level-up screen with about eight items, strays, a 10-minute run, lose at zero sheep. Two builds, bucket-to-lead and always-follow; toggles for the wool cushion (§5.2), grazing (§5.5) and banked level-ups (§8.1) | Testers ask for another run; protecting feels like being a sheepdog, not babysitting; every lost sheep was seen being lost; it runs at 50 fps on a phone with 100 sheep and 150 enemies |
 | **S1: Stage 1** | The Valley as a full 15-minute stage: timeline and director, six archetypes, 8 armaments, 10 provisions, 3 evolutions, crates, elites, the Repo Mothership, the hearing, grazing (if S0 kept it), contract v2, the run harness, an effects-opacity setting | A full run on an iPhone at ≥ 50 fps with 150 sheep and 200 enemies; harness graphs show a level-up every 15–25 s early and every 40–60 s late; median first run ends after minute 8 |
 | **S2: Between runs** | Wool banking, the Requisition Catalogue, Forms as unlocks, three breeds, a second character, the Almanac, appeal court and the Tax Inspector | A new player meets a new item or breed in each of their first ten runs |
 | **S3: The story** | The revised intro (new lines, the saucer and crate beats), hearing cutscenes per stage, barks for every first meeting, music that layers with the pressure | The intro hands over into the first run with no menu in between |
@@ -735,16 +749,16 @@ the controls). What is in it:
 | The meadow, 8 sheep, strays | The valley's meadow, walled; 8 sheep, four stray groups and a new one every 75 s (never more than four waiting) |
 | Gafoop with the stamp and the stapler | The stamp to start with; the stapler, shredder and crook as level-ups; composure (three pips, a knockout) |
 | Gloops and saucers, grabbing and rescue | Both, plus a big Gloop (minutes 5 and 8) that carries alone and drops a crate. One Gloop pins a sheep, three carry it; carriers head over the nearest wall; deport or hook them and it drops back. The take cap (one in eight) |
-| Wool as experience | Auto-shearing of full fleeces, salvage from kills, one bar |
+| Wool as experience | Four shearing booths that take woolly sheep in one at a time (§5.4; Gafoop sheared full fleeces as he passed until the first playtest), salvage from kills, one bar |
 | About eight items | Twelve: four stationery, two flock gear (bell collars, static wool), six provisions; five and five slots |
 | A 10-minute run, lose at zero sheep | The minute table and the director (§7.2) over ten minutes, the hearing at 10:00 |
-| Two builds: bucket-to-lead and always-follow | One build with the test settings on the title, pause and results screens: lead mode, wool cushion, grazing, banked level-ups |
+| Two builds: bucket-to-lead and always-follow | One build with the test settings on the title, pause and results screens: wool cushion, grazing, banked level-ups (a lead-mode setting went with the first playtest: Gafoop's proximity moves the flock, the bucket calls it) |
 
 Not in S0: evolutions, robot wolves, shearlings and bailiffs (S1), the revised intro (S3; the
 intro still tells the old story), meta-progression (S2).
 
-**What the harness says** (a bot that rescues first, fetches strays and circles the flock; 3
-seeds): it holds 12-35 sheep to the hearing at level 19-21 and loses 0-1 along the way; wool is
+**What the harness said** (as first built, before §11.2; a bot that rescues first, fetches
+strays and circles the flock; 3 seeds): it holds 12-35 sheep to the hearing at level 19-21 and loses 0-1 along the way; wool is
 about 35-50% of the experience. A Gafoop who never moves loses the whole flock between minutes
 4 and 7, so play matters. Tuning so far: a fleece is worth 10 and a Gloop 0.6, so the flock
 earns about as much as the killing; hunger runs at half the valley's rate (with grazing on and
@@ -758,9 +772,52 @@ sheep and 150 monsters is plausible but not certain; the F readout and its stres
 there to find out.
 
 **What the playtest should answer**, in order: does protecting feel like being a sheepdog or
-like babysitting? Is every lost sheep seen being lost? Which lead mode is better? Does the wool
-cushion read without being told? Is grazing a decision or a chore? Do banked level-ups suit a
-phone better? And the frame rate at the stress load.
+like babysitting? Is every lost sheep seen being lost? Which lead mode is better (answered:
+neither, §11.2)? Does the wool cushion read without being told? Is grazing a decision or a
+chore? Do banked level-ups suit a phone better? And the frame rate at the stress load.
+
+### 11.2 After the first playtest
+
+Two notes came back from the first play, and both are in:
+
+1. **"Gafoop should not shear the sheep. Put stations about the map that the sheep are brought
+   to, and that shear them one by one."** Shearing is the booths' now (§5.4):
+   - Four Bureau shearing booths stand in the meadow (`src/run/field.ts`), each a board under a
+     red canopy, with a ramp up from its mouth (which faces the middle of the meadow) and one
+     down at the side.
+   - A flock sheep with at least 0.3 of a fleece inside the ring at the mouth (5 m round a point
+     3 m in front of the board) is called in. It hops up (up to a second, by how far it was), is
+     shorn while its fleece visibly shrinks (0.7 s) and hops off at the side (0.35 s), and the
+     next is called as it goes. The wool, worth the same as before (10 a full fleece), flies to
+     Gafoop wherever he is.
+   - On the board a sheep still counts as his, and cannot be grabbed or marked by a saucer.
+   - Long Shears (pickup and shearing reach) became **Electric Shears**: the booths work 30%
+     faster a level. The pickup radius no longer grows.
+   - The HUD draws each booth's ring (on the grass it would vanish into the grass). When 40% of
+     the flock is woolly an arrow at the screen edge points to the nearest booth, and if the
+     flock is woolly at 0:45 and has not been near one, Gafoop says so.
+2. **"It is confusing that the player cannot affect the sheep just by proximity. Bring that
+   back."** Gafoop is a threat stimulus again, as in the valley before M2b (§5.1):
+   - 0.6 over 6 m. The valley's 0.85 over 9 m drove the flock into a wall each time he flew at a
+     monster beside it; he is always flying about here.
+   - With the bucket held, 0.2 over 4 m, plus the bucket's call (1.0 over 14 m). The gentler push
+     has a side effect: the bucket now leads (the flock follows at a walk, about a metre a
+     second), where before it barely did.
+   - The always-follow lead setting is gone.
+
+The harness's bot herds now: it drives the flock from behind into the nearest booth when half
+of it is woolly, keeps driving through fights (only a grab breaks it off), drives straggling
+groups back, and otherwise circles the flock outside its flight zone. Over six seeds it holds
+13-25 sheep to the hearing at level 13-18, loses 3-16 on the way (it lost 0-3 before) and
+shears 5-19 fleeces, so wool is about a quarter of its experience (it was 35-50%). Its booth
+trips are clumsy; a player should do far better, and the playtest will say how much. If wool
+falls short for people too, the levers are the booths' count and ring size, the fleece's worth,
+and the push.
+
+Still open: whether 0.6 over 6 m is the right push; whether four booths are enough, and in the
+right places; and whether sheep-hunters should keep coming in on the flock's far side from
+Gafoop (§7.3), which now means head-on into a flock he is driving. The harness could not tell
+that rule from random directions.
 
 ---
 
@@ -785,7 +842,8 @@ phone better? And the frame rate at the stress load.
 
 | Question | Recommendation |
 |---|---|
-| Does the flock follow Gafoop by default, or only while the bucket is held? | Prototype both in S0; lean towards the bucket |
+| Does the flock follow Gafoop by default, or only while the bucket is held? | Settled by the first playtest (§11.2): sheep move off as he comes, and come to the bucket |
+| How strong is Gafoop's presence, and do monsters still come from the flock's far side now that he drives it from behind? | 0.6 over 6 m to start (the valley's was 0.85 over 9 m); the next playtest says (§11.2) |
 | Is the flock the only fail state? | Yes, with knockouts for Gafoop (§6) |
 | Run length | 15 minutes for stage 1, 20 after; phones may want a 10-minute mode |
 | Does building survive (hurdles, pens)? | Not in S0. Later, possibly as deployable gear (a hurdle ring, a woof post) in the way Brotato has structures |
