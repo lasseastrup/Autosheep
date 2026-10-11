@@ -43,6 +43,8 @@ if (process.env.CLOSE) {
     const r = g.run;
     r.time = 120;
     r.spawning = false;
+    // exactly these (the first card's pick would make a second usable)
+    r.items.clear();
     for (const [id, l] of Object.entries(items)) r.items.set(id, l);
     const f = r.flockCentre();
     r.gafoop.x = r.gafoop.px = f.x + 4;
@@ -70,6 +72,7 @@ await page.evaluate((items) => {
   const g = window.__game.game;
   const r = g.run;
   r.time = 120;
+  r.items.clear();
   for (const [id, l] of Object.entries(items)) r.items.set(id, l);
   g.autopilot = true;
 }, items);
