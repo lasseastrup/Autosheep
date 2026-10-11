@@ -20,7 +20,13 @@ export interface SheepPose {
   bounce: number;
   /** 1 = a full fleece, 0 = just shorn */
   wool: number;
+  /** off the ground (carried, beamed up), m */
+  lift?: number;
+  /** rolled onto its side (struggling, carried), radians */
+  tilt?: number;
 }
+
+const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /** How a just-shorn sheep looks: smaller, and a little pink. */
 const SHORN = new THREE.Color('#f4b4a8');
@@ -161,13 +167,21 @@ export class SheepInstancer {
         batch.mesh.instanceColor!.needsUpdate = true;
       }
     }
-    s.root.position.set(p.x, 0, p.z);
+    s.root.position.set(p.x, p.lift ?? 0, p.z);
     s.root.rotation.set(0, p.rotY, 0);
+    if (p.tilt) s.root.rotateZ(p.tilt);
     s.root.scale.setScalar(p.scale);
     s.root.updateMatrixWorld(true);
     const parts = this.parts[v];
     const slots = this.slots[i];
     for (let k = 0; k < parts.length; k++) parts[k].batch.mesh.setMatrixAt(slots[k], parts[k].node.matrixWorld);
+  }
+
+  /** Sheep i out of sight: its parts collapse to nothing until it is posed again. */
+  hide(i: number): void {
+    const parts = this.parts[i % this.templates.length];
+    const slots = this.slots[i];
+    for (let k = 0; k < parts.length; k++) parts[k].batch.mesh.setMatrixAt(slots[k], ZERO);
   }
 
   /** Call once a frame after posing. */

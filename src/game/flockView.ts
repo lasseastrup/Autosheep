@@ -17,6 +17,14 @@ function lerpAngle(a: number, b: number, t: number): number {
   return a + d * t;
 }
 
+/** Per-sheep extras the survivors run draws with (see FlockView.update). */
+export interface FlockExtras {
+  wool: Float32Array;
+  hidden: Uint8Array;
+  lift: Float32Array;
+  tilt: Float32Array;
+}
+
 interface Anim {
   pose: SheepPose;
   speed: number;
@@ -42,6 +50,8 @@ export class FlockView {
   readonly bleats: number[] = [];
 
   private readonly instancer: SheepInstancer;
+  /** sheep hidden last frame (they are collapsed once, not posed every frame) */
+  private hiddenShown = new Uint8Array(0);
 
   constructor(count: number, seed: number) {
     const wool: THREE.Color[] = [];
@@ -95,14 +105,25 @@ export class FlockView {
   /**
    * @param alpha  how far the frame is between the last two simulation steps
    * @param watch  what alert sheep stare at (Gafoop)
+   * @param extra  the survivors run's: wool, sheep out of sight, sheep off the ground or
+   *   struggling (tilt), all per sheep
    */
-  update(o: FlockOutputs, alpha: number, time: number, dt: number, watch: THREE.Vector3, works?: Works): void {
+  update(o: FlockOutputs, alpha: number, time: number, dt: number, watch: THREE.Vector3, works?: Works, extra?: FlockExtras): void {
     this.bleats.length = 0;
     let nFleece = 0;
     let nYarn = 0;
+    if (this.hiddenShown.length !== this.anims.length) this.hiddenShown = new Uint8Array(this.anims.length);
     for (let i = 0; i < this.anims.length; i++) {
       const a = this.anims[i];
       const s = a.pose;
+      if (extra?.hidden[i]) {
+        if (!this.hiddenShown[i]) {
+          this.instancer.hide(i);
+          this.hiddenShown[i] = 1;
+        }
+        continue;
+      }
+      this.hiddenShown[i] = 0;
       const has = this.prevX.length === o.count;
       const x = has ? this.prevX[i] + (o.x[i] - this.prevX[i]) * alpha : o.x[i];
       const z = has ? this.prevY[i] + (o.y[i] - this.prevY[i]) * alpha : o.y[i];
@@ -145,7 +166,9 @@ export class FlockView {
       }
       const b = a.bleatUntil - time;
       s.bleat = b > 0 ? Math.sin((1 - b / 0.55) * Math.PI) : 0;
-      s.wool = works && i < works.wool.length ? works.wool[i] : 1;
+      s.wool = extra ? extra.wool[i] : works && i < works.wool.length ? works.wool[i] : 1;
+      s.lift = extra ? extra.lift[i] : 0;
+      s.tilt = extra ? extra.tilt[i] : 0;
       this.instancer.pose(i, s);
 
       // a pack rides on the back, bobbing with the walk

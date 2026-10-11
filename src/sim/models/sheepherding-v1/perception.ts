@@ -157,7 +157,10 @@ export class Perception {
       for (let q = 0; q < m; q++) {
         const k = list[q];
         const p = this.threatPressure(flock, i, threats[k], cosBlind);
-        if (p <= 0) continue;
+        // Autosheep: a wall only ever weakens a threat, so one that cannot beat the strongest so
+        // far needs no line-of-sight test (with hundreds of monsters about, that test was most
+        // of perception's cost)
+        if (p <= 0 || (sight <= 1 && p <= pressure)) continue;
         const seen = p * (obstacles.blocksSight(x, y, threats[k].x, threats[k].y) ? sight : 1);
         if (seen > pressure) { pressure = seen; dominant = k; }
       }
@@ -313,6 +316,9 @@ export class Perception {
     // opposite: a dog that keeps its distance becomes part of the scenery.
     const habituated = 1 - P.habituationStrength * flock.familiarity[i];
     const zone = (baseZone * (0.8 + 0.4 * flock.arousal[i]) * habituated) / flock.boldness[i];
+    // Autosheep: beyond the zone's outer edge it presses not at all (the smoothstep below is 0
+    // there); with a swarm about, most threats a sheep weighs end here
+    if (d >= zone * P.outerScale) return 0;
     // is the threat closing on me?
     let toward = 0;
     if (threat.speed > 1e-3 && d > 1e-3) {

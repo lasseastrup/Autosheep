@@ -105,7 +105,7 @@ const pick = <T>(table: readonly T[], level: number): T => table[Math.max(0, Mat
 
 /** An armament's numbers at a level (1-based). */
 export const STATS = {
-  stamp: (l: number) => ({ cooldown: pick([2.0, 1.9, 1.8, 1.65, 1.5, 1.35], l), damage: pick([10, 13, 16, 19, 22, 27], l), radius: pick([2.3, 2.5, 2.7, 2.9, 3.1, 3.5], l), knock: 2 }),
+  stamp: (l: number) => ({ cooldown: pick([1.5, 1.45, 1.4, 1.3, 1.2, 1.1], l), damage: pick([10, 13, 16, 19, 22, 27], l), radius: pick([2.6, 2.8, 3.0, 3.2, 3.4, 3.8], l), knock: 2 }),
   stapler: (l: number) => ({ cooldown: 1.1, count: pick([1, 2, 2, 3, 3, 4], l), damage: pick([6, 7, 8, 9, 10, 12], l), pierce: pick([0, 0, 1, 1, 2, 2], l), speed: 18, range: 11, life: 0.9 }),
   shredder: (l: number) => ({ blades: pick([1, 2, 2, 3, 3, 4], l), damage: pick([5, 6, 7, 8, 9, 10], l), radius: pick([1.9, 1.9, 2.1, 2.1, 2.3, 2.5], l), spin: 2.6, every: 0.4 }),
   crook: (l: number) => ({ cooldown: pick([1.6, 1.5, 1.4, 1.3, 1.2, 1.0], l), damage: pick([8, 10, 12, 14, 16, 20], l), range: pick([2.6, 2.8, 3.0, 3.2, 3.4, 3.8], l), arc: l >= 6 ? Math.PI : (Math.PI * 2) / 3, knock: 1.5 }),

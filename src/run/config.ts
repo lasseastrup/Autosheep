@@ -19,8 +19,8 @@ export const RUN = {
     beyond: 9,
     composure: 3,
     /** a pip comes back after this long without a hit */
-    regen: 6,
-    invulnerable: 1.2,
+    regen: 5,
+    invulnerable: 2,
     knockedOut: 4,
     /** monsters closer than this (plus their own size) hit him */
     radius: 0.55,
@@ -67,6 +67,8 @@ export const RUN = {
     byFlock: 3.5,
     /** new groups turn up at least this far from the flock */
     away: 28,
+    /** no new group while this many wait to be found */
+    max: 4,
   },
   /** spawns come in on a ring this far from the middle of the screen (the view sets it) */
   spawnRadius: 34,
@@ -124,8 +126,8 @@ export interface Minute {
 
 /** S0's ten minutes (plan §7.2): the authored shape of the run. */
 export const MINUTES: Minute[] = [
-  { min: 6, every: 1.8, saucers: 0 },
-  { min: 12, every: 1.5, saucers: 0 },
+  { min: 5, every: 2.6, saucers: 0 },
+  { min: 10, every: 2.0, saucers: 0 },
   { min: 18, every: 1.3, saucers: 1 },
   { min: 24, every: 1.1, saucers: 1, events: [{ at: 30, kind: 'ring', n: 18 }] },
   { min: 30, every: 1.0, saucers: 1 },

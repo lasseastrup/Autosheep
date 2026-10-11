@@ -9,6 +9,9 @@ import { AudioEngine } from './audio/engine';
 import { loadFonts, type Fonts } from './engine/bitmapFont';
 import { Game } from './game/game';
 import { GameAudio } from './game/gameAudio';
+import { RunGame } from './run/runGame';
+import { RunAudio } from './run/runAudio';
+import { wireRunInput } from './run/runInput';
 import { W as GW, H as GH, type ButtonId } from './game/hud';
 import { loader } from './loading';
 import { PixelRenderer } from './engine/pixelRenderer';
@@ -17,7 +20,8 @@ import { PixelRenderer } from './engine/pixelRenderer';
  * Entry point. Plays the intro cutscene in real time (synced to the audio clock), then the
  * game. With ?capture it exposes a frame-exact API used by tools/render-movie.mjs instead.
  *
- *   ?game      skip the intro and go straight to herding
+ *   ?game      skip the intro and go straight to the game
+ *   ?valley    the automation valley (main line) instead of the survivors run (this branch)
  *   ?manual    (with ?game) no animation loop; tooling drives frames through window.__game
  *   ?fresh     start a new valley, ignoring the saved one (the saved one is overwritten)
  *   ?t=42      start the intro at 42 s (development)
@@ -104,7 +108,7 @@ async function boot(): Promise<void> {
       return;
     }
     button(g, f, WATCH, 'WATCH THE INTRO', 'ENTER', hover === WATCH || (hover === null && Math.floor(now * 2) % 2 === 0), C.straw);
-    button(g, f, SKIP, 'SKIP TO THE GAME', 'ESC', hover === SKIP, C.lime);
+    button(g, f, SKIP, 'PLAY', 'ESC', hover === SKIP, C.lime);
     f.tiny.draw(g, 'SOUND ON  -  THE INTRO IS 3 MINUTES  -  ESC SKIPS IT AT ANY TIME', 240, 248, { color: C.fog, align: 'center' });
   };
   const drawStart = (now: number) => {
@@ -291,15 +295,19 @@ const endPrompt = (t: number) => (g: CanvasRenderingContext2D) => {
   if (Math.floor(t * 2) % 2 === 0) f.body.draw(g, text, 240, 241, { color: C.lime, align: 'center' });
 };
 
+/** The survivors run (this branch's game), or the valley with ?valley. */
+type Playable = Game | RunGame;
+
 /** The game, built and warmed on a hidden canvas so that switching to it is instant. */
-let preparing: Promise<Game> | null = null;
-function prepareGame(fonts: Fonts): Promise<Game> {
+let preparing: Promise<Playable> | null = null;
+function prepareGame(fonts: Fonts): Promise<Playable> {
   preparing ??= (async () => {
     // Behind the menu the game is built on the menu's own WebGL renderer and draws nothing to
     // the screen; starting it just hands it the canvas. (It used to have a hidden canvas and a
     // WebGL context of its own, which phones can take away while it waits.)
-    const game = await loader.step('game: building the valley', () => {
-      const g = new Game(player ? player.pr.renderer : canvas, fonts, { fresh: params.has('fresh') });
+    const game = await loader.step(params.has('valley') ? 'game: building the valley' : 'game: building the run', () => {
+      const target = player ? player.pr.renderer : canvas;
+      const g: Playable = params.has('valley') ? new Game(target, fonts, { fresh: params.has('fresh') }) : new RunGame(target, fonts);
       if (player) g.pr.offscreen = true;
       else fitGame(g)();
       return g;
@@ -312,7 +320,7 @@ function prepareGame(fonts: Fonts): Promise<Game> {
   return preparing;
 }
 
-function fitGame(game: Game): () => void {
+function fitGame(game: Playable): () => void {
   return fitTo((w, h, d, f) => {
     game.pr.resize(w, h, d, f);
     game.portrait = window.innerHeight > window.innerWidth;
@@ -337,18 +345,21 @@ async function startGame(fonts: Fonts, ctx: AudioContext | null, ready?: () => v
     player.dispose();
   }
   game.pr.offscreen = false;
-  canvas.style.cursor = 'none';
+  // the valley draws its own pointer; the run steers by it, so it stays the system's
+  canvas.style.cursor = game instanceof RunGame ? 'crosshair' : 'none';
   document.body.dataset.scene = 'game';
   const fit = fitGame(game);
   fit();
   window.addEventListener('resize', fit);
   hint.textContent = '';
-  wireInput(game, canvas);
+  if (game instanceof RunGame) wireRunInput(game, canvas);
+  else wireInput(game, canvas);
 
   // The game starts on the tap; the sound joins when the audio is running. (Waiting for it
   // first left the game frozen on its first frame where resuming the audio never finished.)
   const begin = (c: AudioContext) => {
-    game.begin(new GameAudio(c));
+    if (game instanceof RunGame) game.begin(new RunAudio(c));
+    else game.begin(new GameAudio(c));
     if (c.state !== 'running') {
       void loader.step('audio: starting', () => new Promise<void>((resolve) => {
         const check = () => {
@@ -494,7 +505,7 @@ function wireInput(game: Game, el: HTMLCanvasElement): void {
 
 declare global {
   interface Window {
-    __game?: { game: Game; tick: (n: number, dt?: number, draw?: boolean) => void; begin: () => void; grab: () => string };
+    __game?: { game: Playable; tick: (n: number, dt?: number, draw?: boolean) => void; begin: () => void; grab: () => string };
     __autosheep?: {
       duration: number;
       shots: { name: string; start: number; end: number; marks: Record<string, number> }[];

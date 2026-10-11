@@ -104,6 +104,18 @@ export class GafoopActor {
     this.pos.addScaledVector(this.vel, dt);
     this.pos.x = Math.min(bounds.w - 1, Math.max(1, this.pos.x));
     this.pos.z = Math.min(bounds.h - 1, Math.max(1, this.pos.z));
+    this.animate(dt, time);
+  }
+
+  /** The survivors run moves him itself: put him where it says, going as fast as it says. */
+  place(x: number, z: number, vx: number, vz: number, dt: number, time: number): void {
+    this.pos.set(x, 0, z);
+    this.vel.set(vx, 0, vz);
+    this.animate(dt, time);
+  }
+
+  /** Face where he is going and pose for this frame. */
+  private animate(dt: number, time: number): void {
     const speed = this.vel.length();
     if (speed > 0.3) {
       const goal = Math.atan2(this.vel.x, this.vel.z);

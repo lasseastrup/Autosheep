@@ -39,7 +39,7 @@ export type RunEvent =
   | { kind: 'staple' }
   | { kind: 'grab'; sheep: number }
   | { kind: 'free'; sheep: number }
-  | { kind: 'lost'; sheep: number; beamed: boolean }
+  | { kind: 'lost'; sheep: number; beamed: boolean; x: number; y: number }
   | { kind: 'fleece'; sheep: number; x: number; y: number }
   | { kind: 'shear'; sheep: number }
   | { kind: 'claim'; n: number; x: number; y: number }
@@ -150,11 +150,12 @@ export class Run {
   private nextStrayGroup = 0;
   private nextStrays = RUN.strays.from;
 
-  constructor(field: RunField, opts: { seed?: number; options?: Partial<RunOptions> } = {}) {
+  /** @param opts.grass  a field to reuse (the view keeps drawing the same one), refilled */
+  constructor(field: RunField, opts: { seed?: number; options?: Partial<RunOptions>; grass?: GrassField } = {}) {
     const seed = opts.seed ?? 1;
     this.options = { ...DEFAULT_OPTIONS, ...opts.options };
     this.rng = new Rng(seed * 7919 + 13);
-    this.grass = new GrassField(FIELD.width, FIELD.height);
+    this.grass = opts.grass ?? new GrassField(FIELD.width, FIELD.height);
     this.grass.fill(field.cap);
 
     // every sheep the run will ever have is in the model from the start: the flock where it
@@ -469,7 +470,8 @@ export class Run {
   private strayStep(): void {
     const S = RUN.strays;
     if (this.time >= this.nextStrays) {
-      this.nextStrays += S.every;
+      this.nextStrays = Math.max(this.nextStrays + S.every, this.time);
+      if (this.strayGroups.length >= S.max) return;
       const f = this.flockCentre();
       for (let tries = 0; tries < 24; tries++) {
         const x = this.rng.range(10, FIELD.width - 10);
@@ -750,6 +752,8 @@ export class Run {
   /** Sheep j is gone for this run. Whatever took it goes with it. */
   private lose(j: number, beamed: boolean): void {
     const e = this.enemies;
+    const x = this.model.out.x[j];
+    const y = this.model.out.y[j];
     for (let i = 0; i < e.high; i++) {
       if (!e.alive[i] || e.carry[i] !== j || e.kind[i] === KIND.saucer) continue;
       this.emit({ kind: 'poof', x: e.x[i], y: e.y[i], z: 0.5, enemy: KINDS[e.kind[i]], escaped: true });
@@ -764,7 +768,7 @@ export class Run {
     d.losses.push(this.time);
     d.losses = d.losses.filter((t) => this.time - t <= DIRECTOR.window);
     if (d.losses.length >= DIRECTOR.losses) d.easeUntil = this.time + DIRECTOR.rest;
-    this.emit({ kind: 'lost', sheep: j, beamed });
+    this.emit({ kind: 'lost', sheep: j, beamed, x, y });
     this.first('lost');
   }
 
@@ -1024,6 +1028,15 @@ export class Run {
     e.hp[i] -= damage;
     e.flash[i] = 0.12;
     if (e.hp[i] <= 0) this.kill(i);
+  }
+
+  /**
+   * For the perf test on a phone (plan §11's exit criterion): `sheep` spares into the flock and
+   * `monsters` more Gloops on the way.
+   */
+  stressTest(sheep: number, monsters: number): void {
+    this.addSheep(sheep);
+    for (let k = 0; k < monsters; k += 3) this.clump(3);
   }
 
   /** Deport monster i now (as a weapon would): for tooling and tests. */

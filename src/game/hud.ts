@@ -342,7 +342,7 @@ function touchControls(g: CanvasRenderingContext2D, f: Fonts, s: HudState): void
   }
 }
 
-function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, y: number, under: number): void {
+export function bubble(g: CanvasRenderingContext2D, f: Fonts, text: string, x: number, y: number, under: number): void {
   const lines = f.body.wrap(text, 190);
   const w = Math.max(...lines.map((l) => f.body.measure(l))) + 12;
   const h = lines.length * 14 + 6;
