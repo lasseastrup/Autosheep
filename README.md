@@ -6,6 +6,11 @@ sheep be more advanced than the humans were. General Gafoop has been exiled to E
 Instead of conveyor belts, you build fences, gates, races and machines that herd sheep
 through a civilisation, from the Stone Age to the Industrial Age.
 
+> **This branch** (`claude/survivors-pivot`) tries a new direction: Autosheep as a
+> survivors-like, where the thing you keep alive is a growing flock. The plan, the research and
+> the revised backstory are in [`docs/PIVOT-SURVIVORS.md`](docs/PIVOT-SURVIVORS.md); its game is
+> the S0 prototype, **Hold the Flock** (below). The automation valley is still here: `?valley`.
+
 **Status:** M2 under way. A 3-minute intro cutscene (the backstory), then two levels: herd 30
 sheep into a pen, then build the first herdway, a loop of races through a shearing shed and a
 spindle hut that makes yarn on its own. The flock runs behind a model-independent contract with
@@ -31,7 +36,37 @@ npm test             # flock behaviour tests
 
 The start screen offers the intro or the game; during the intro `Esc` (or the corner button)
 skips straight to the game and `S` toggles subtitles. Development query flags: `?game` opens the game directly, `?t=95` starts
-the intro at 95 s, `?nosubs` hides subtitles, `?scale=3` forces the upscale factor.
+the intro at 95 s, `?nosubs` hides subtitles, `?scale=3` forces the upscale factor, `?valley`
+plays the automation valley instead of the survivors run.
+
+**Playing: Hold the Flock (S0, this branch's game).** Earth goes to whoever holds its sheep when
+the Bureau reconvenes, in ten minutes, and every claimant in the sector wants them. Gafoop's
+stationery fires itself: a rubber stamp to start with. Fly with `WASD` (or the arrow keys, or by
+pointing the mouse); hold a mouse button or `Space` for the bucket, and the flock follows it. On
+a phone a thumb anywhere is a stick and the other holds BUCKET.
+
+- Purple Gloops come over the walls. In the first minute they are after Gafoop; after that,
+  after sheep. One pins a sheep, three lift it and carry it off over the nearest wall; deport
+  the carriers (or hook them with the crook) and the sheep drops back into the flock. A sheep
+  is lost only once it is carried four metres past the wall. Saucers mark a sheep with a red
+  ring for a couple of seconds, then beam it up: shoot one down and the sheep falls back.
+  No more than one sheep in eight can be taken at once.
+- A sheep with half a fleece or more cannot be grabbed: the fleece tears off instead, in tufts
+  to pick up (the wool cushion). Fed, calm sheep grow wool; Gafoop shears full fleeces as he
+  flies past, and wool and the salvage monsters leave fill the requisition bar along the top.
+- Each level-up is a pick of three: Gafoop's stationery (stamp, stapler, shredder, crook), the
+  flock's gear (bell collars that ring out shockwaves, static wool that arcs lightning between
+  sheep standing close) or provisions for either. `1` `2` `3`, or click or tap a card. Big
+  Gloops drop crates, a free pick.
+- Stray groups graze around the meadow (arrows at the screen edge): fly near them and they join.
+  Gafoop has three pips of composure; touching monsters costs one, and with none he is knocked
+  out for four seconds. Lose the last sheep and the claim is dismissed.
+
+`Esc` pauses. The title, pause and results screens hold the S0 test settings, saved in the
+browser: whether the flock follows the bucket or always follows Gafoop, the wool cushion,
+grazing (a hungry sheep grows no wool), and whether level-ups open at once or wait as supply
+drops (`E`). `F` shows the frame rate and counts, with a **+100 SHEEP +150** button for checking
+a phone at the S0 load (100 sheep, 150 monsters).
 
 **Playing: The Valley.** One persistent valley that saves itself (in the browser) and carries
 on where you left it. The Galactic Bureau sends Forms, one at a time, on the clipboard in the
@@ -90,6 +125,8 @@ same corner (tap it for the log). The same lines go to the browser console, pref
 | `npm run movie -- --workers 2` | Render the whole intro to `out/movie/autosheep-intro.mp4` (headless Chromium + ffmpeg, resumable) |
 | `npm run voice -- <kokoro.onnx> <voices.bin> [ids…]` | Regenerate voice lines with Kokoro TTS (see below) |
 | `node tools/game-shot.mjs <dir> start\|herd` | Headless game screenshots; `herd` has a scripted shepherd play the level to the end |
+| `node tools/run-shot.mjs <dir> [seconds]` | Headless screenshots of a survivors run (title, cards, then the bot flying Gafoop) |
+| `HARNESS=1 npx vitest run tests/run-harness.test.ts` | The run harness: whole runs played by a bot, minute by minute (`SEEDS=1,2`, `OPTIONS='{"grazing":false}'`) |
 
 ## How it looks the way it looks
 
@@ -119,6 +156,7 @@ src/audio/       WebAudio engine, synthesised SFX, tracker-style music + score
 src/intro/       the cutscene: lines.json (script), timeline.ts (edit list), player.ts, sets/
 src/sim/         the flock contract, behaviour scenarios, and models/ behind it
 src/game/        the game: camera, level, flock view, Gafoop, HUD, audio
+src/run/         the survivors run (S0): simulation, monsters, items, bot; view, HUD, input, audio
 tests/           flock contract tests (vitest), run against every model
 tools/           frame grabs, movie render, artifact build, voice generation, dev test pages
 docs/            DESIGN.md (game design), research/ (rendering, flock-sim analysis)

@@ -1,6 +1,6 @@
 # AUTOSHEEP: SURVIVORS — pivot plan
 
-*Branch `claude/survivors-pivot` · October 2026 · proposal, nothing built yet*
+*Branch `claude/survivors-pivot` · October 2026 · proposal; S0 built, awaiting a playtest (§11.1)*
 
 > **Nobody touches my sheep.** A survivors-like (Vampire Survivors, Brotato, Halls of Torment)
 > in which the thing you are keeping alive is not you but a growing flock. Every grabby species
@@ -686,13 +686,19 @@ and 200 enemies, desktop 300 and 300.
 
 The contract (`src/sim/contract.ts`) gains what the run needs, and nothing reaches past it:
 
-1. **A changing population.** `add(sheep) → id` for strays and lambs; `take(id)` and
-   `release(id, x, y)` for a sheep that is carried (the game moves it while carried; the model
-   ignores it); stable ids across adds and removals.
-2. **A stimulus grid** inside the model (above), invisible to the game.
-3. **Tests**: a carried sheep released near the flock rejoins it; a wolf (a threat) can cut a
-   straggler out; 200 sheep under 300 threats stays inside the budget; determinism with adds
-   and removals.
+1. **A changing population** ✅ (S0), done more simply than first planned: every sheep a run
+   will have is in the model from the start, and `hold(i)`, `place(i, x, y)` and `release(i)`
+   take one out of the flock and put it back. A held sheep stays where the game puts it and is
+   out of every other sheep's sight, grid and group, so strays wait where they graze, spares
+   wait off the field, and a carried sheep goes where its carriers go, over the wall included.
+   Indices never change.
+2. **A stimulus grid** ✅ (S0) inside the model, invisible to the game: threats bucketed by
+   their lookahead point, each sheep weighing only those that could reach it, in list order, so
+   the flock is bit-identical to the plain loop. 200 sheep among 300 threats: 12.1 ms a step
+   before, 3.0 after.
+3. **Tests** ✅ (S0): a held sheep stays put and is not missed, a carried one goes through fences
+   and past the edge of the world, one let go far away walks back, and many threats give the
+   same flock as the plain loop. Still to come: a wolf cutting a straggler out (S1).
 
 ### 10.4 Testing and balancing
 
@@ -711,13 +717,50 @@ The contract (`src/sim/contract.ts`) gains what the run needs, and nothing reach
 
 | Milestone | Goal | Exit criteria |
 |---|---|---|
-| **S0: Find the fun** | Greybox in the existing engine: the meadow, 8 sheep, Gafoop with the stamp and the stapler, Gloops and saucers, grabbing and rescue, wool as experience, a level-up screen with about eight items, strays, a 10-minute run, lose at zero sheep. Two builds, bucket-to-lead and always-follow; toggles for the wool cushion (§5.2), grazing (§5.5) and banked level-ups (§8.1) | Testers ask for another run; protecting feels like being a sheepdog, not babysitting; every lost sheep was seen being lost; it runs at 50 fps on a phone with 100 sheep and 150 enemies |
+| **S0: Find the fun** 🟡 built, awaiting a playtest (§11.1) | Greybox in the existing engine: the meadow, 8 sheep, Gafoop with the stamp and the stapler, Gloops and saucers, grabbing and rescue, wool as experience, a level-up screen with about eight items, strays, a 10-minute run, lose at zero sheep. Two builds, bucket-to-lead and always-follow; toggles for the wool cushion (§5.2), grazing (§5.5) and banked level-ups (§8.1) | Testers ask for another run; protecting feels like being a sheepdog, not babysitting; every lost sheep was seen being lost; it runs at 50 fps on a phone with 100 sheep and 150 enemies |
 | **S1: Stage 1** | The Valley as a full 15-minute stage: timeline and director, six archetypes, 8 armaments, 10 provisions, 3 evolutions, crates, elites, the Repo Mothership, the hearing, grazing (if S0 kept it), contract v2, the run harness, an effects-opacity setting | A full run on an iPhone at ≥ 50 fps with 150 sheep and 200 enemies; harness graphs show a level-up every 15–25 s early and every 40–60 s late; median first run ends after minute 8 |
 | **S2: Between runs** | Wool banking, the Requisition Catalogue, Forms as unlocks, three breeds, a second character, the Almanac, appeal court and the Tax Inspector | A new player meets a new item or breed in each of their first ten runs |
 | **S3: The story** | The revised intro (new lines, the saucer and crate beats), hearing cutscenes per stage, barks for every first meeting, music that layers with the pressure | The intro hands over into the first run with no menu in between |
 | **S4: Content** | Stages 2–4 and their bosses, the full catalogue, accessibility (screen shake, colour-blind outlines), balancing | Each stage cleared by a tester within ten attempts |
 
 S0 is the decision point: if protecting a flock is not fun in the greybox, nothing later fixes it.
+
+### 11.1 S0 as built
+
+**Hold the Flock** is this branch's game (the start screen's PLAY, or `?game`; the README has
+the controls). What is in it:
+
+| Planned | Built |
+|---|---|
+| The meadow, 8 sheep, strays | The valley's meadow, walled; 8 sheep, four stray groups and a new one every 75 s (never more than four waiting) |
+| Gafoop with the stamp and the stapler | The stamp to start with; the stapler, shredder and crook as level-ups; composure (three pips, a knockout) |
+| Gloops and saucers, grabbing and rescue | Both, plus a big Gloop (minutes 5 and 8) that carries alone and drops a crate. One Gloop pins a sheep, three carry it; carriers head over the nearest wall; deport or hook them and it drops back. The take cap (one in eight) |
+| Wool as experience | Auto-shearing of full fleeces, salvage from kills, one bar |
+| About eight items | Twelve: four stationery, two flock gear (bell collars, static wool), six provisions; five and five slots |
+| A 10-minute run, lose at zero sheep | The minute table and the director (§7.2) over ten minutes, the hearing at 10:00 |
+| Two builds: bucket-to-lead and always-follow | One build with the test settings on the title, pause and results screens: lead mode, wool cushion, grazing, banked level-ups |
+
+Not in S0: evolutions, robot wolves, shearlings and bailiffs (S1), the revised intro (S3; the
+intro still tells the old story), meta-progression (S2).
+
+**What the harness says** (a bot that rescues first, fetches strays and circles the flock; 3
+seeds): it holds 12-35 sheep to the hearing at level 19-21 and loses 0-1 along the way; wool is
+about 35-50% of the experience. A Gafoop who never moves loses the whole flock between minutes
+4 and 7, so play matters. Tuning so far: a fleece is worth 10 and a Gloop 0.6, so the flock
+earns about as much as the killing; hunger runs at half the valley's rate (with grazing on and
+monsters about, frightened sheep do not graze, and a hungry sheep grows no wool); the opening is
+gentler (stamp every 1.5 s, fewer Gloops in the first two minutes).
+
+**Performance.** At the S0 check load (108 sheep, 107 monsters after the stress button) a step
+takes about 4 ms on a desktop CPU, of which the flock model is about 3.2; ordinary play is well
+under half that. On a phone that is roughly three to four times as much, so 50 fps with 100
+sheep and 150 monsters is plausible but not certain; the F readout and its stress button are
+there to find out.
+
+**What the playtest should answer**, in order: does protecting feel like being a sheepdog or
+like babysitting? Is every lost sheep seen being lost? Which lead mode is better? Does the wool
+cushion read without being told? Is grazing a decision or a chore? Do banked level-ups suit a
+phone better? And the frame rate at the stress load.
 
 ---
 
